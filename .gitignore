@@ -19,6 +19,19 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# --- Cursor / agentes / asistentes (solo local) ---
+.cursor/
+.codex/
+.claude/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.github/copilot-instructions.md
+agent-transcripts/
+agent-tools/
+**/prompts/
+**/_agent*/
+
 # --- Datos locales del gestor (NO publicar) ---
 data/**
 !data/.gitkeep
@@ -28,17 +41,8 @@ data/**
 _s*_captures/
 **/_captures/
 
-# --- Informes internos con rutas de máquina ---
-# Públicos permitidos: S21, S23, S24_PREPUBLICACION, S25_PUBLICACION, S26_LIMPIEZA
-INFORME_S0*.md
-INFORME_S1*.md
-INFORME_S2*.md
-!INFORME_S21.md
-!INFORME_S23.md
-!INFORME_S24_PREPUBLICACION.md
-!INFORME_S25_PUBLICACION.md
-!INFORME_S26_LIMPIEZA.md
-!INFORME_S26_1_INTEGRACION.md
+# --- Informes y handoffs internos (NO publicar) ---
+INFORME_S*.md
 INFORME_UI_*.md
 HANDOFF_*.md
 
@@ -80,8 +84,3 @@ releases/
 **/*.utoc
 **/*.ucas
 **/~mods/
-
-# --- Cursor / agentes (local) ---
-.cursor/projects/
-agent-transcripts/
-agent-tools/
