@@ -113,12 +113,12 @@ class S263PublicTreeTests(unittest.TestCase):
             "faltan plantillas públicas .github/ISSUE_TEMPLATE",
         )
 
-    def test_local_cursor_rule_file_still_on_disk(self):
-        # Conservar entorno local; no debe estar en git ls-files.
-        rule = ROOT / ".cursor" / "rules" / "four-seven-tech.mdc"
-        self.assertTrue(rule.is_file(), "regla Cursor local ausente en disco")
+    def test_cursor_rule_is_not_tracked(self):
+        # En el entorno del autor la regla puede existir en disco (ignorada).
+        # En clones públicos no tiene por qué estar; solo exigimos que no se rastree.
         tracked = set(_git_ls_files())
         self.assertNotIn(".cursor/rules/four-seven-tech.mdc", tracked)
+        self.assertFalse(any(p.startswith(".cursor/") for p in tracked))
 
 
 if __name__ == "__main__":
