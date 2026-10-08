@@ -53,6 +53,7 @@ from .paths import (
     path_configured,
     suggest_vortex_downloads,
     suggest_vortex_mods,
+    test_sandbox_active,
 )
 
 REGISTRY_VERSION = 1
@@ -569,6 +570,9 @@ def ensure_s10_profiles(registry: GamesRegistry) -> bool:
 
     Conserva rutas/datos existentes de Remake. Devuelve True si hubo cambios.
     """
+    if test_sandbox_active():
+        # S29: no inyectar perfiles reales de Steam/Vortex en modo prueba.
+        return False
     changed = False
     remake = registry.games.get(LEGACY_FF7R_GAME_ID)
     if remake:
@@ -607,6 +611,9 @@ def ensure_registry(
     reg = load_registry(path)
     dirty = False
     if not reg.games:
+        if test_sandbox_active():
+            # Perfil vacío: el launcher S29 escribe games.json sintético.
+            return reg
         ff7 = make_ff7r_legacy_record(app_data)
         reg.games[ff7.id] = ff7
         reg.active_game_id = ff7.id

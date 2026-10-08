@@ -60,6 +60,16 @@ def default_user_data_dir() -> Path:
     return Path.home() / "AppData" / "Local" / "FourSevenTech" / "F7777techMods"
 
 
+def test_sandbox_active() -> bool:
+    """True si el proceso pide perfil de prueba aislado (S29)."""
+    return (os.environ.get("SGM_TEST_SANDBOX") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def resolve_data_dir() -> Path:
     env = (os.environ.get("SGM_DATA_DIR") or "").strip()
     if env:

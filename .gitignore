@@ -68,6 +68,9 @@ legacy/**
 **/own_archive_demo/
 **/_tmp*/
 **/tmp_sgm*/
+**/F7777techMods_S29_UI_TEST*/
+**/_s29*/
+**/_ui_captures/
 
 # --- Secretos ---
 *.pem
