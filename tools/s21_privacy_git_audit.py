@@ -54,12 +54,16 @@ PUBLIC_GLOBS = [
     "docs/**/*.md",
     "examples/**/*",
     ".github/**/*",
-    ".cursor/rules/**/*",
     "README.md",
     "requirements.txt",
+    "requirements-build.txt",
+    "requirements-legacy.txt",
     ".gitignore",
-    "INFORME_S21.md",
     "Iniciar_Gestor.bat",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
     "app/**/*.txt",
 ]
 
