@@ -88,6 +88,15 @@ releases/
 *.spec.bak
 *.exe
 *.msi
+# Runtime / instalación diaria nunca en Git
+**/F7777techMods_runtime/
+**/runtime/Scripts/
+**/runtime/Lib/
+
+# --- Logs / diagnósticos locales ---
+**/logs/
+DIAGNOSTICO_*.txt
+data/_s*_*.json
 *.zip
 !docs/**/*.md
 

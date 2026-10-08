@@ -120,12 +120,15 @@ def list_archive_members(archive: Path) -> tuple[list[str], list[str], str]:
         if not exe:
             return [], [f"Sin herramienta 7z fiable para {suf}"], "unsupported"
         try:
+            from .win_compat import subprocess_creationflags
+
             proc = subprocess.run(
                 [str(exe), "l", "-slt", "-ba", str(archive)],
                 capture_output=True,
                 text=True,
                 timeout=120,
                 check=False,
+                creationflags=subprocess_creationflags(),
             )
             if proc.returncode != 0:
                 return [], [f"7z list falló ({proc.returncode}): {proc.stderr[:200]}"], "7z"
@@ -226,12 +229,15 @@ def extract_with_7z(archive: Path, sandbox: Path) -> ExtractResult:
             res.errors.append(str(e))
             return res
     try:
+        from .win_compat import subprocess_creationflags
+
         proc = subprocess.run(
             [str(exe), "x", f"-o{sandbox}", "-y", "-ba", str(archive)],
             capture_output=True,
             text=True,
             timeout=300,
             check=False,
+            creationflags=subprocess_creationflags(),
         )
         if proc.returncode != 0:
             res.errors.append(f"7z extract falló: {proc.stderr[:300]}")
