@@ -4,7 +4,7 @@ Tres entornos separados. Ninguno debe depender de archivos privados de los otros
 
 ## Desarrollo
 
-- Ruta típica: repositorio local `02_Steam_Gestor_Mods`
+- Ruta típica: clon/repositorio local de desarrollo del producto
 - Aquí se edita código, se ejecutan tests y scripts de mantenimiento
 - Datos de desarrollo: `data/` del repo (gitignored) o `SGM_DATA_DIR`
 
@@ -25,7 +25,7 @@ Tres entornos separados. Ninguno debe depender de archivos privados de los otros
 ## GitHub (público)
 
 - Solo lo rastreado por Git (código, tests públicos, docs públicas, tools de build, LICENSE)
-- Excluido: `.cursor/`, informes, `data/` real, `dist/`, runtime instalado, mods, logs
+- Excluido: configuración local de IDE, informes internos, datos runtime, builds, mods y logs
 
 ## Construcción reproducible
 

@@ -252,8 +252,12 @@ def verify_stage(stage: Path) -> None:
     # El stage no debe referenciar la ruta del repo de desarrollo
     for rel in ("Abrir F7777techMods.cmd", "Abrir F7777techMods.vbs"):
         text = (stage / rel).read_text(encoding="utf-8", errors="ignore")
-        if "02_Steam_Gestor_Mods" in text or "Steam_Gestor" in text:
-            raise SystemExit(f"ABORT: launcher referencia el repo: {rel}")
+        # Evitar rutas de desarrollo del autor embebidas en launchers
+        lowered = text.lower()
+        if "documents\\" in lowered and "juegos" in lowered:
+            raise SystemExit(f"ABORT: launcher referencia ruta de desarrollo: {rel}")
+        if "f7777techmods_install_dir" not in lowered and "pythonpath" not in lowered:
+            raise SystemExit(f"ABORT: launcher incompleto: {rel}")
 
 
 def app_is_running() -> bool:

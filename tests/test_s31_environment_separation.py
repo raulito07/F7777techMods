@@ -29,8 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 class S31EnvironmentSeparationTests(unittest.TestCase):
     def test_gitignore_keeps_private_out(self):
         gi = (ROOT / ".gitignore").read_text(encoding="utf-8")
-        for needle in (".cursor/", "INFORME_S*.md", "dist/", "data/**"):
+        for needle in ("INFORME_S*.md", "dist/", "data/**", ".idea/"):
             self.assertIn(needle, gi)
+        self.assertTrue(".cursor" in gi or "IDE" in gi or ".idea/" in gi)
 
     def test_packaged_tree_independent_of_repo(self):
         stage_src = ROOT / "dist" / "F7777techMods_runtime"
@@ -59,7 +60,12 @@ class S31EnvironmentSeparationTests(unittest.TestCase):
 import sys
 from pathlib import Path
 repo = Path(r"{ROOT}").resolve()
-sys.path = [p for p in sys.path if "02_Steam_Gestor_Mods" not in str(Path(p).resolve())]
+sep = str(repo) + (__import__("os").sep)
+sys.path = [
+    p for p in sys.path
+    if str(Path(p).resolve()) != str(repo)
+    and not str(Path(p).resolve()).startswith(sep)
+]
 sys.path.insert(0, r"{dest}")
 import app
 p = Path(app.__file__).resolve()

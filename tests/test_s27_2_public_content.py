@@ -39,6 +39,7 @@ ALLOWLIST_PREFIXES = (
     ".gitignore",
     "tests/test_s26_3_public_tree.py",
     "tests/test_s27_2_public_content.py",
+    "tests/test_s31_environment_separation.py",
 )
 
 # Frases/productos de asistentes o carpetas internas no publicables en docs/código público.
