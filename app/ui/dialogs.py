@@ -43,6 +43,11 @@ def show_scroll_text(
     win.title(title)
     win.geometry("720x520")
     win.minsize(480, 320)
+    try:
+        win.transient(parent)
+        win.attributes("-topmost", False)
+    except Exception:
+        pass
     win.grab_set()
     accent = COLORS["danger"] if kind == "error" else COLORS["accent"]
     ctk.CTkLabel(
@@ -72,6 +77,10 @@ def ask_scroll_confirm(
     win.title(title)
     win.geometry("760x560")
     win.minsize(520, 360)
+    try:
+        win.transient(parent)
+    except Exception:
+        pass
     win.grab_set()
     ctk.CTkLabel(
         win,

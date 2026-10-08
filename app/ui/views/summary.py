@@ -104,6 +104,12 @@ class SummaryView(ctk.CTkFrame):
         ).pack(side="left", padx=4)
         ctk.CTkButton(
             actions,
+            text="Guía prueba Remake",
+            fg_color=COLORS["btn_secondary"],
+            command=app.show_remake_trial_guide,
+        ).pack(side="left", padx=4)
+        ctk.CTkButton(
+            actions,
             text="Aplicar al juego",
             fg_color=COLORS["btn_apply"],
             command=app.apply_to_game,

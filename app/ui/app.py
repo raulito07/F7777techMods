@@ -27,6 +27,7 @@ S06 — shell de navegación + controlador de sesión (CustomTkinter).
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -100,6 +101,11 @@ class ModManagerApp(ctk.CTk):
         self.geometry("1480x900")
         self.minsize(1100, 700)
         self.configure(fg_color=COLORS["bg_app"])
+        # Evitar flash de ventana vacía / segunda raíz Tk al construir UI
+        try:
+            self.withdraw()
+        except Exception:
+            pass
 
         self.mods: list[ModEntry] = []
         self.by_id: dict[str, ModEntry] = {}
@@ -128,6 +134,31 @@ class ModManagerApp(ctk.CTk):
         self.refresh()
         self.show_view("summary")
         self._maybe_show_migration_notice()
+        self.after(50, self._finish_startup_window)
+
+    def _finish_startup_window(self) -> None:
+        """Muestra la ventana principal con icono correcto (una sola ventana)."""
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
+            self._apply_window_icon()
+        except Exception:
+            pass
+        try:
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+        try:
+            from ..core.win_compat import log_startup
+
+            log_startup("UI principal visible")
+        except Exception:
+            pass
 
     # ---------- session / locks ----------
     def is_busy(self) -> bool:
@@ -171,6 +202,44 @@ class ModManagerApp(ctk.CTk):
         if not self.session:
             return False
         return semantic_enabled(self.session.adapter_id)
+
+    def _apply_window_icon(self) -> None:
+        """Icono ventana + barra de tareas (no Python). Sin fallar."""
+        from ..core.win_compat import resolve_app_icon_paths
+
+        ico_path = next(
+            (p for p in resolve_app_icon_paths() if p.suffix.lower() == ".ico" and p.is_file()),
+            None,
+        )
+        png_path = next(
+            (p for p in resolve_app_icon_paths() if p.suffix.lower() == ".png" and p.is_file()),
+            None,
+        )
+        if ico_path is not None:
+            try:
+                self.iconbitmap(str(ico_path))
+            except Exception:
+                pass
+            try:
+                # Windows: asocia icono al root Tcl (barra de tareas)
+                self.wm_iconbitmap(str(ico_path))
+            except Exception:
+                pass
+        if png_path is not None:
+            try:
+                img = tk.PhotoImage(file=str(png_path))
+                self.iconphoto(True, img)
+                self._icon_photo_ref = img  # evitar GC
+            except Exception:
+                try:
+                    from PIL import ImageTk
+
+                    pil = Image.open(png_path).resize((256, 256))
+                    img = ImageTk.PhotoImage(pil)
+                    self.iconphoto(True, img)
+                    self._icon_photo_ref = img
+                except Exception:
+                    pass
 
     # ---------- zoom / appearance ----------
     def _load_zoom(self) -> int:
@@ -1111,6 +1180,55 @@ class ModManagerApp(ctk.CTk):
         lines.append("")
         lines.append("Apply NO ejecutado.")
         show_scroll_text(self, title="Vista previa instalación", body="\n".join(lines))
+
+    def show_remake_trial_guide(self) -> None:
+        """Guía S30: prueba con mods reales Remake — solo SIMULAR, sin Apply."""
+        from .dialogs import show_scroll_text
+
+        gid = self.registry.active_game_id if self.registry else ""
+        if gid != "ff7r_remake":
+            messagebox.showinfo(
+                "Guía prueba Remake",
+                "Selecciona primero el juego «FF7 Remake» en el selector superior.\n"
+                "Esta guía no aplica a Rebirth ni Stellar Blade.",
+            )
+            return
+        # Candidato pequeño de una sola .pak (excluye FOV70)
+        tip_folder = ""
+        tip_pak = ""
+        for m in self.mods:
+            fl = m.folder.lower()
+            if "fov70" in fl or "fov_70" in fl:
+                continue
+            if len(m.paks) != 1:
+                continue
+            tip_folder = m.folder
+            tip_pak = m.paks[0]
+            break
+        tip_line = (
+            f"Candidato sugerido (pequeño, 1×.pak):\n  {tip_folder}\n  archivo: {tip_pak}\n"
+            if tip_folder
+            else "Busca en Biblioteca un mod con una sola .pak y tamaño reducido.\n"
+        )
+        body = (
+            "PRUEBA REAL SEGURA — FF7 Remake (S30)\n"
+            "====================================\n"
+            "NO se ejecutará Apply desde esta guía.\n"
+            "NO tocar FOV70, Vortex staging, ni archivos ajenos.\n\n"
+            f"{tip_line}\n"
+            "Pasos:\n"
+            "1) Biblioteca → buscar el mod sugerido (o otro simple).\n"
+            "2) Revisar detalle: fuente, Formato/Clasificación S28, instalables.\n"
+            "3) Activar «Usar» en el plan (solo plan, no escribe en el juego).\n"
+            "4) Si hay variantes, elegir UNA manualmente.\n"
+            "5) Pulsar «3·Simular» o Simular en Resumen.\n"
+            "6) Abrir Conflictos: revisar colisiones y archivos afectados.\n"
+            "7) Comprobar la lista exacta de lo que se instalaría.\n"
+            "8) DETENERSE. No pulsar Aplicar en esta etapa.\n\n"
+            "Si Apply estuviera habilitado, exigiría confirmación explícita;\n"
+            "aun así, en S30 la prueba termina en SIMULAR.\n"
+        )
+        show_scroll_text(self, title="Guía prueba Remake (solo simular)", body=body)
 
     def show_safe_subset(self) -> None:
         """Propone subconjunto seguro sin mutar el loadout ni Apply."""
@@ -3107,7 +3225,12 @@ class ModManagerApp(ctk.CTk):
 
 
 def run() -> None:
+    from ..core.win_compat import log_startup, prepare_windows_app
+
+    prepare_windows_app()
+    log_startup("run() inicio")
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
     app = ModManagerApp()
     app.mainloop()
+    log_startup("run() fin mainloop")
