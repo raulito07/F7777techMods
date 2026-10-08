@@ -21,8 +21,8 @@ Licencia Pública General de GNU para más detalles.
 Debería haber recibido una copia de la Licencia Pública General de GNU
 junto con este programa. Si no, vea <https://www.gnu.org/licenses/>.
 
-S26.3 — el árbol rastreado por Git no debe incluir materiales internos
-de IDE/agentes ni informes de sesión de desarrollo.
+S26.3 — el árbol rastreado por Git no debe incluir configuración local
+de entorno ni informes internos de desarrollo.
 """
 
 from __future__ import annotations
