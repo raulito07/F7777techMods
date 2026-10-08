@@ -21,7 +21,7 @@ Licencia Pública General de GNU para más detalles.
 Debería haber recibido una copia de la Licencia Pública General de GNU
 junto con este programa. Si no, vea <https://www.gnu.org/licenses/>.
 
-S06/S06.1/S20 — Biblioteca: multi-selección, plan masivo, filtros, estados claros.
+S06/S06.1/S20/S27 — Biblioteca multijuego: filtros por dimensiones, plan masivo seguro.
 """
 
 from __future__ import annotations
@@ -31,7 +31,36 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
+from ...core.library_status import (
+    FILTER_ALL,
+    archive_candidates,
+    compute_mod_status,
+    filter_mods,
+    status_badges_text,
+    work_restore_candidates,
+)
 from ..theme import COLORS, LIBRARY_PAGE_SIZE
+
+_STATE_FILTER_VALUES = [
+    FILTER_ALL,
+    "Activo en plan",
+    "Desactivados",
+    "Instalado real",
+    "Pendiente Apply",
+    "Con conflictos",
+    "Variante pendiente",
+    "Archivado ZIP",
+    "En WORK",
+    "Staging Vortex",
+    "Pendiente Vortex",
+    "No disponible",
+    # Compatibilidad etiquetas S20
+    "Activos",
+    "Conflictos",
+    "En destino",
+    "No instalados",
+    "Archivados ZIP",
+]
 
 
 class LibraryView(ctk.CTkFrame):
@@ -103,19 +132,8 @@ class LibraryView(ctk.CTkFrame):
             m = ctk.CTkOptionMenu(
                 cell,
                 variable=self.state_var,
-                values=[
-                    "TODOS",
-                    "Activos",
-                    "Desactivados",
-                    "Conflictos",
-                    "Variante pendiente",
-                    "En destino",
-                    "No instalados",
-                    "Archivados ZIP",
-                    "En WORK",
-                    "Pendiente Apply",
-                ],
-                width=150,
+                values=_STATE_FILTER_VALUES,
+                width=168,
                 command=lambda _=None: self._on_filter_change(),
             )
             m.pack(anchor="w")
@@ -167,21 +185,25 @@ class LibraryView(ctk.CTkFrame):
 
         _labeled(filters, "Buscar", make_search)
         self.search_var.trace_add("write", lambda *_: self._debounce_redraw())
-        _labeled(filters, "Estado", make_state)
+        _labeled(filters, "Dimensión / estado", make_state)
         _labeled(filters, "Personaje", make_char)
         _labeled(filters, "Fuente", make_source)
         _labeled(filters, "Orden", make_sort)
         _labeled(filters, "Pág.", make_page_size)
 
+        ctk.CTkButton(
+            filters, text="Limpiar filtros", width=120, command=self.clear_filters
+        ).pack(side="right", padx=6, pady=14)
         ctk.CTkButton(filters, text="Actualizar", width=100, command=app.refresh).pack(
-            side="right", padx=10, pady=14
+            side="right", padx=6, pady=14
         )
 
         legend = ctk.CTkLabel(
             self,
             text=(
-                "Leyenda: Plan SI ≠ Destino ON. Rojo=conflicto · Ámbar=variante. "
-                "Multi-selección: Ctrl/Shift+clic. Acciones masivas solo cambian el PLAN (no el juego)."
+                "Dimensiones independientes: Plan ≠ Destino ≠ ZIP ≠ WORK ≠ Staging. "
+                "Rojo=conflicto · Ámbar=variante. Multi-sel.: Ctrl/Shift. "
+                "Acciones de PLAN no escriben en el juego; ZIP/WORK solo seleccionan candidatos."
             ),
             text_color=COLORS["text_muted"],
             font=ctk.CTkFont(size=11),
@@ -195,16 +217,22 @@ class LibraryView(ctk.CTkFrame):
             bulk, text="Plan (masivo)", text_color=COLORS["text_muted"]
         ).pack(side="left", padx=8, pady=6)
         ctk.CTkButton(
-            bulk, text="Activar selección", width=130, command=app.bulk_plan_activate
+            bulk, text="Activar en plan", width=120, command=app.bulk_plan_activate
         ).pack(side="left", padx=3, pady=6)
         ctk.CTkButton(
-            bulk, text="Desactivar selección", width=140, command=app.bulk_plan_deactivate
+            bulk, text="Desactivar en plan", width=130, command=app.bulk_plan_deactivate
         ).pack(side="left", padx=3, pady=6)
         ctk.CTkButton(
             bulk, text="Sel. página", width=90, command=self.select_page
         ).pack(side="left", padx=3, pady=6)
         ctk.CTkButton(
             bulk, text="Sel. filtrados", width=110, command=self.select_filtered
+        ).pack(side="left", padx=3, pady=6)
+        ctk.CTkButton(
+            bulk, text="Candidatos ZIP", width=110, command=self.select_archive_candidates
+        ).pack(side="left", padx=3, pady=6)
+        ctk.CTkButton(
+            bulk, text="Candidatos WORK", width=120, command=self.select_work_candidates
         ).pack(side="left", padx=3, pady=6)
         ctk.CTkButton(
             bulk, text="Limpiar sel.", width=90, command=self.clear_selection
@@ -412,49 +440,30 @@ class LibraryView(ctk.CTkFrame):
         except Exception:
             return LIBRARY_PAGE_SIZE
 
+    def clear_filters(self) -> None:
+        self.search_var.set("")
+        self.state_var.set(FILTER_ALL)
+        self.char_var.set("TODOS")
+        self.source_var.set("TODAS")
+        self.sort_var.set("Nombre")
+        self.page = 0
+        self.redraw()
+
     def filtered(self) -> list:
         app = self.app
-        q = self.search_var.get().strip().lower()
-        state = self.state_var.get()
-        char = self.char_var.get()
-        source = self.source_var.get()
         prios = {}
         if app.session:
             from ...core.priority_store import load_priorities
 
             prios = load_priorities(app.session.priorities_json)
 
-        out = []
-        for m in app.mods:
-            if char != "TODOS" and m.character_main != char:
-                continue
-            src = (getattr(m, "source_kind", "") or "STAGING_VORTEX").upper()
-            if source == "VORTEX" and "WORK" in src:
-                continue
-            if source == "WORK" and "WORK" not in src:
-                continue
-            if state == "Activos" and not m.usar:
-                continue
-            if state == "Desactivados" and m.usar:
-                continue
-            if state == "Conflictos" and not (m.usar and m.conflicto):
-                continue
-            if state == "Variante pendiente" and not (m.usar and m.multi and not m.pak_elegido):
-                continue
-            if state == "En destino" and not m.on_disk:
-                continue
-            if state == "No instalados" and m.on_disk:
-                continue
-            if state == "Archivados ZIP" and not getattr(m, "archived", False):
-                continue
-            if state == "En WORK" and not getattr(m, "work_extracted", False):
-                continue
-            if state == "Pendiente Apply" and not (m.usar and not m.on_disk):
-                continue
-            blob = f"{m.name} {m.description} {m.category} {' '.join(m.paks)} {m.folder}".lower()
-            if q and q not in blob:
-                continue
-            out.append(m)
+        out = filter_mods(
+            app.mods,
+            query=self.search_var.get(),
+            dimension=self.state_var.get(),
+            source=self.source_var.get(),
+            character=self.char_var.get(),
+        )
 
         sk = self.sort_var.get()
         if sk == "Estado":
@@ -506,20 +515,9 @@ class LibraryView(ctk.CTkFrame):
         self._paint_page()
 
     def _row_tag(self, m) -> tuple[str, str]:
-        """Devuelve (tag, texto_estado). Rojo solo si hay conflicto real."""
-        if m.usar and m.multi and not m.pak_elegido:
-            return "pending", "Variante pendiente"
-        if m.usar and m.conflicto and any(
-            x in m.conflicto for x in ("Choque", "Falta", "CONFLICTO", "VARIANT", "AJENO")
-        ):
-            return "conflict", m.conflicto
-        if m.usar and m.on_disk:
-            return "active_inst", "Activo + en destino"
-        if m.usar:
-            return "active", "Activo (plan)"
-        if m.on_disk:
-            return "installed", "En destino (plan NO)"
-        return "off", "Desactivado"
+        """Devuelve (tag, texto_estado) a partir de dimensiones independientes."""
+        st = compute_mod_status(m)
+        return st.row_tag, st.row_label
 
     def _paint_page(self) -> None:
         app = self.app
@@ -618,6 +616,41 @@ class LibraryView(ctk.CTkFrame):
         self.app._bulk_filter_folders = None
         self._update_sel_count()
 
+    def _apply_candidate_selection(self, mods: list, label: str) -> None:
+        """Marca candidatos para flujos posteriores; no archiva ni restaura."""
+        folders = [m.folder for m in mods]
+        self.app._bulk_filter_folders = folders or None
+        visible = [f for f in folders if self.tree.exists(f)]
+        if visible:
+            self.tree.selection_set(visible)
+        else:
+            self.tree.selection_remove(self.tree.selection())
+        n = len(folders)
+        if hasattr(self, "sel_count"):
+            self.sel_count.configure(text=f"{len(visible)} vis. / {n} {label}")
+        if n == 0:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showinfo(
+                    "Selección",
+                    f"No hay candidatos «{label}» con el inventario actual.",
+                )
+            except Exception:
+                pass
+
+    def select_archive_candidates(self) -> None:
+        self._apply_candidate_selection(
+            archive_candidates(self._filtered_cache or self.app.mods),
+            "ZIP",
+        )
+
+    def select_work_candidates(self) -> None:
+        self._apply_candidate_selection(
+            work_restore_candidates(self._filtered_cache or self.app.mods),
+            "WORK",
+        )
+
     def _update_sel_count(self) -> None:
         if hasattr(self, "sel_count"):
             n = len(self.tree.selection())
@@ -702,28 +735,33 @@ class LibraryView(ctk.CTkFrame):
             prios = load_priorities(self.app.session.priorities_json)
         prio = prios.get(m.folder, "(sin prioridad)")
 
-        plan_txt = "SI — activo en plan" if m.usar else "NO — desactivado en plan"
-        inst_txt = (
-            "ON — detectado en carpeta destino"
-            if m.on_disk
-            else "off — no detectado en destino"
-        )
-        conf_txt = m.conflicto if (m.usar and m.conflicto) else "ninguno"
+        st = compute_mod_status(m)
+        conf_txt = m.conflicto if m.conflicto else "(sin conflicto reportado)"
         staging_txt = self._staging_change_label(m)
         from ...core.game_status import lifecycle_for_mod
 
         life = lifecycle_for_mod(m)
-        src = getattr(m, "source_kind", "STAGING_VORTEX")
-        arch = "sí" if getattr(m, "archived", False) else "no"
-        work = "sí" if getattr(m, "work_extracted", False) else "no"
+        src = getattr(m, "source_kind", "STAGING_VORTEX") or "(fuente no disponible)"
+        game_name = "—"
+        if self.app.session and getattr(self.app.session, "record", None):
+            game_name = getattr(self.app.session.record, "name", None) or self.app.session.record.id
+        arch_hash = (
+            getattr(m, "archive_content_sha256", "")
+            or getattr(m, "archive_zip_sha256", "")
+            or ""
+        )
+        arch_hash_txt = (arch_hash[:16] + "…") if arch_hash else "(hash no disponible)"
         self.detail_badges.configure(
             text=(
-                f"Ciclo: {life}\n"
+                f"Juego: {game_name}\n"
+                f"Id carpeta: {m.folder}\n"
+                f"Ciclo UI: {life}\n"
                 f"Fuente: {src}\n"
-                f"Archivado ZIP: {arch} · Extraído WORK: {work}\n"
-                f"Plan: {plan_txt}\nInstalación: {inst_txt}\n"
-                f"Conflicto: {conf_txt}\nStaging: {staging_txt}\n"
-                f"(Plan SI ≠ instalado; cambios staging no actualizan WORK)"
+                f"Flags: {status_badges_text(st)}\n"
+                f"Conflicto: {conf_txt}\n"
+                f"Staging local: {staging_txt}\n"
+                f"ZIP hash: {arch_hash_txt}\n"
+                f"(Plan ≠ destino ≠ ZIP ≠ WORK; Enabled Vortex ≠ instalado real)"
             )
         )
 
@@ -762,19 +800,23 @@ class LibraryView(ctk.CTkFrame):
 
         self.detail_meta.configure(state="normal")
         self.detail_meta.delete("1.0", "end")
+        author_txt = m.author.strip() if (m.author or "").strip() else "(no verificado)"
+        size_txt = "(tamaño no calculado en inventario; evitar escaneo masivo)"
         self.detail_meta.insert(
             "1.0",
             (
                 f"Prioridad: {prio}\n"
                 f"Variante: {m.pak_elegido or ('(elige 1)' if m.multi else '—')}\n"
-                f"Multi: {'SI' if m.multi else 'NO'}  ·  Paks staging: {len(m.paks)}\n"
-                f"Tipo: {m.category or '—'}\n"
-                f"Personaje: {', '.join(m.characters)}\n"
-                f"Autor: {m.author or '—'}\n"
-                f"Slots: {', '.join(m.slots) or '—'}\n"
-                f"Carpeta: {m.folder}\n"
+                f"Multi: {'SI' if m.multi else 'NO'}  ·  Paks conocidos: {len(m.paks)}\n"
+                f"Tipo: {m.category or '(no disponible)'}\n"
+                f"Personaje: {', '.join(m.characters) or '(no disponible)'}\n"
+                f"Autor: {author_txt}\n"
+                f"Tamaño: {size_txt}\n"
+                f"Ruta staging: {m.stage_path or '(no disponible)'}\n"
+                f"ZIP propio: {getattr(m, 'archive_path', '') or '(no disponible)'}\n"
+                f"Slots: {', '.join(m.slots) or '(no disponible)'}\n"
                 f"{cls_txt}"
-                f"\nArchivos afectados (plan / staging):\n{files_txt}"
+                f"\nArchivos relevantes (plan / staging):\n{files_txt}"
             ),
         )
         self.detail_meta.configure(state="disabled")

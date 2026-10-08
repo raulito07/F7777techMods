@@ -172,13 +172,13 @@ class S20UxTests(unittest.TestCase):
         m.usar = True
         m.on_disk = False
         tag, estado = app.view_library._row_tag(m)
-        self.assertIn("Activo", estado)
+        self.assertIn("plan", estado.lower())
         self.assertNotEqual(tag, "installed")
         m.usar = False
         m.on_disk = True
         tag2, estado2 = app.view_library._row_tag(m)
         self.assertEqual(tag2, "installed")
-        self.assertIn("destino", estado2.lower())
+        self.assertTrue("destino" in estado2.lower() or "ON" in estado2)
 
     def test_stale_analysis_blocks_apply(self):
         app = self._app(10)

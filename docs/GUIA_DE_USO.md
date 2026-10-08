@@ -23,6 +23,17 @@
 
 ## Estados de mod (UI)
 
-DESCARGADO → PREPARADO → SELECCIONADO (plan) → INSTALADO (destino).
+Ciclo resumido: DESCARGADO → PREPARADO → SELECCIONADO (plan) → INSTALADO (destino).
 
-«Activo» en el plan del gestor **no** implica Enabled en Vortex.
+En la biblioteca (S27) además se muestran **dimensiones independientes** que pueden coexistir:
+
+| Flag | Significado |
+|------|-------------|
+| ACTIVO_EN_PLAN | Marcado para futura aplicación |
+| INSTALADO_REAL | Detectado en destino / manifiesto |
+| ARCHIVADO_VERIFICADO | ZIP propio conocido |
+| DISPONIBLE_EN_WORK | Copia en WORK_LIBRARY |
+| STAGING_VORTEX | Presente en staging (lectura) |
+| CONFLICTO / VARIANTE_PENDIENTE | Bloqueos de plan |
+
+«Activo» en el plan del gestor **no** implica Enabled en Vortex ni instalación real.
