@@ -42,6 +42,14 @@ PENDIENTE_VORTEX = "PENDIENTE_VORTEX"
 CONFLICTO = "CONFLICTO"
 VARIANTE_PENDIENTE = "VARIANTE_PENDIENTE"
 NO_DISPONIBLE = "NO_DISPONIBLE"
+# S28 — dimensiones de estructura (opcional; si hay informe)
+ESTRUCTURA_INCOMPLETA = "ESTRUCTURA_INCOMPLETA"
+ESTRUCTURA_REVISION = "ESTRUCTURA_REVISION"
+ESTRUCTURA_NO_SOPORTADA = "ESTRUCTURA_NO_SOPORTADA"
+ESTRUCTURA_BLOQUEO = "ESTRUCTURA_BLOQUEO"
+FORMATO_UE4_PAK = "FORMATO_UE4_PAK"
+FORMATO_UE5_IOSTORE = "FORMATO_UE5_IOSTORE"
+FORMATO_GENERICO = "FORMATO_GENERICO"
 
 ALL_FLAGS = (
     INSTALADO_REAL,
@@ -53,6 +61,13 @@ ALL_FLAGS = (
     CONFLICTO,
     VARIANTE_PENDIENTE,
     NO_DISPONIBLE,
+    ESTRUCTURA_INCOMPLETA,
+    ESTRUCTURA_REVISION,
+    ESTRUCTURA_NO_SOPORTADA,
+    ESTRUCTURA_BLOQUEO,
+    FORMATO_UE4_PAK,
+    FORMATO_UE5_IOSTORE,
+    FORMATO_GENERICO,
 )
 
 # Filtros de UI (etiqueta → predicado sobre flags / mod)
@@ -86,7 +101,11 @@ def _pendiente_vortex_hint(m: ModEntry) -> bool:
     return "PENDIENTE_VORTEX" in c or "PENDIENTE VORTEX" in c
 
 
-def compute_mod_status(m: ModEntry) -> ModStatusView:
+def compute_mod_status(
+    m: ModEntry,
+    *,
+    structure_report: object | None = None,
+) -> ModStatusView:
     flags: set[str] = set()
     src = (getattr(m, "source_kind", "") or "").upper()
 
@@ -94,6 +113,25 @@ def compute_mod_status(m: ModEntry) -> ModStatusView:
         flags.add(INSTALADO_REAL)
     if m.usar:
         flags.add(ACTIVO_EN_PLAN)
+
+    # S28 — informe de estructura (opcional)
+    if structure_report is not None:
+        cls = str(getattr(structure_report, "classification", "") or "")
+        if cls == "INCOMPLETO":
+            flags.add(ESTRUCTURA_INCOMPLETA)
+        if cls == "NO_SOPORTADO":
+            flags.add(ESTRUCTURA_NO_SOPORTADA)
+        if bool(getattr(structure_report, "needs_manual_review", False)):
+            flags.add(ESTRUCTURA_REVISION)
+        if bool(getattr(structure_report, "blocks_prepare", False)):
+            flags.add(ESTRUCTURA_BLOQUEO)
+        fmt = str(getattr(structure_report, "format_label", "") or "").lower()
+        if "ue4" in fmt or "pak (.pak)" in fmt:
+            flags.add(FORMATO_UE4_PAK)
+        elif "iostore" in fmt or "ue5" in fmt:
+            flags.add(FORMATO_UE5_IOSTORE)
+        elif "genéric" in fmt or "generic" in fmt or "carpeta" in fmt:
+            flags.add(FORMATO_GENERICO)
 
     archived = bool(getattr(m, "archived", False))
     has_hash = bool(
@@ -212,6 +250,14 @@ def mod_matches_dimension_filter(m: ModEntry, st: ModStatusView, filt: str) -> b
         "Con conflictos": CONFLICTO,
         "Variante pendiente": VARIANTE_PENDIENTE,
         "No disponible": NO_DISPONIBLE,
+        "Paquete incompleto": ESTRUCTURA_INCOMPLETA,
+        "Revisión manual": ESTRUCTURA_REVISION,
+        "No soportado": ESTRUCTURA_NO_SOPORTADA,
+        "Bloqueo estructura": ESTRUCTURA_BLOQUEO,
+        "Con variantes": VARIANTE_PENDIENTE,
+        "Formato UE4 PAK": FORMATO_UE4_PAK,
+        "Formato UE5 IoStore": FORMATO_UE5_IOSTORE,
+        "Formato genérico": FORMATO_GENERICO,
     }
     if filt in mapping:
         return st.has(mapping[filt])
@@ -240,6 +286,7 @@ def filter_mods(
     dimension: str = FILTER_ALL,
     source: str = "TODAS",
     character: str = "TODOS",
+    structure_by_folder: dict[str, object] | None = None,
 ) -> list[ModEntry]:
     """Filtrado puro (sin I/O). Apto para inventarios grandes en tests."""
     out: list[ModEntry] = []
@@ -251,7 +298,10 @@ def filter_mods(
             continue
         if source == "WORK" and "WORK" not in src:
             continue
-        st = compute_mod_status(m)
+        rep = None
+        if structure_by_folder is not None:
+            rep = structure_by_folder.get(m.folder)
+        st = compute_mod_status(m, structure_report=rep)
         if not mod_matches_dimension_filter(m, st, dimension):
             continue
         if not mod_matches_query(m, query):

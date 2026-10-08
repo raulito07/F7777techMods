@@ -376,6 +376,9 @@ class ModManagerApp(ctk.CTk):
         self._work_index = None
         self._bulk_filter_folders = None
         self._isolated_plan_folders: list[str] | None = None
+        self._structure_by_folder: dict = {}
+        self._structure_cache: dict = {}
+        self._structure_blocks_apply: bool = False
         self._views = {
             "summary": self.view_summary,
             "library": self.view_library,
@@ -417,6 +420,8 @@ class ModManagerApp(ctk.CTk):
             return False
         if plan.conflicts or plan.file_unresolved or plan.errors:
             return False
+        if getattr(self, "_structure_blocks_apply", False):
+            return False
         try:
             if vortex_deploy_present(self._ctx()):
                 return False
@@ -443,6 +448,8 @@ class ModManagerApp(ctk.CTk):
             or self._last_plan.errors
         ):
             tip = "Plan bloqueado — ver Conflictos"
+        elif getattr(self, "_structure_blocks_apply", False):
+            tip = "Estructura incompleta/ambigua — revisión manual"
         else:
             tip = "Listo para aplicar" if ok else "No aplicable"
         try:
@@ -671,11 +678,37 @@ class ModManagerApp(ctk.CTk):
         ctx = self._ctx()
         settings = self._settings()
 
+        adapter_id = (
+            str(getattr(self.session.record, "adapter", "") or "generic_folder")
+            if self.session
+            else "generic_folder"
+        )
+        struct_cache = getattr(self, "_structure_cache", None)
+        if struct_cache is None:
+            self._structure_cache = {}
+            struct_cache = self._structure_cache
+
         def worker():
+            from ..core.mod_structure import (
+                analyze_library_structures,
+                structure_blocks_apply,
+            )
+
             try:
                 plan = plan_apply(mods_snapshot, ctx, settings)
             except Exception:
                 plan = None
+            try:
+                structures = analyze_library_structures(
+                    mods_snapshot,
+                    adapter_id,
+                    cache=struct_cache,
+                    only_usar=False,
+                )
+                blocks = structure_blocks_apply(structures, mods_snapshot)
+            except Exception:
+                structures = {}
+                blocks = False
 
             def done():
                 if gen != self._analyze_gen or session_gen != self._session_gen:
@@ -690,7 +723,10 @@ class ModManagerApp(ctk.CTk):
                 self._last_plan = plan
                 self._analysis_ready = plan is not None
                 self._analysis_for_gen = session_gen
+                self._structure_by_folder = structures
+                self._structure_blocks_apply = bool(blocks)
                 self._merge_file_conflict_labels()
+                self._merge_structure_labels()
                 # Solo repintar biblioteca (no resetear página/filtros de más)
                 self.view_library.redraw()
                 self.view_summary.refresh()
@@ -705,6 +741,19 @@ class ModManagerApp(ctk.CTk):
                 pass
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _merge_structure_labels(self) -> None:
+        """Anota bloqueos de estructura en la etiqueta de conflicto (solo UI/plan)."""
+        reports = getattr(self, "_structure_by_folder", None) or {}
+        for m in self.mods:
+            r = reports.get(m.folder)
+            if not r or not r.blocks_prepare:
+                continue
+            tag = f"ESTRUCTURA:{r.classification}"
+            if tag not in (m.conflicto or ""):
+                m.conflicto = (
+                    f"{m.conflicto}; {tag}".strip("; ") if m.conflicto else tag
+                )
 
     def _merge_file_conflict_labels(self) -> None:
         plan = self._last_plan
