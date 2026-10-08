@@ -29,13 +29,14 @@ _s*_captures/
 **/_captures/
 
 # --- Informes internos con rutas de máquina ---
-# Públicos permitidos: S21, S23, S24_PREPUBLICACION
+# Públicos permitidos: S21, S23, S24_PREPUBLICACION, S25_PUBLICACION
 INFORME_S0*.md
 INFORME_S1*.md
 INFORME_S2*.md
 !INFORME_S21.md
 !INFORME_S23.md
 !INFORME_S24_PREPUBLICACION.md
+!INFORME_S25_PUBLICACION.md
 INFORME_UI_*.md
 HANDOFF_*.md
 

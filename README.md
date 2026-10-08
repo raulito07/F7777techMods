@@ -4,15 +4,15 @@
 **Autor:** Raúl Ruano Gil  
 **Versión:** 0.1.0 Beta  
 **Licencia:** [GNU GPL v3](LICENSE)  
-**Web oficial:** https://fourseven.es/
+**Web oficial:** https://fourseven.es/  
+**GitHub:** https://github.com/raulito07/F7777techMods  
+**Releases:** https://github.com/raulito07/F7777techMods/releases
 
 Gestor local **multijuego** de mods para Windows: inventaria packs desde un staging (p. ej. carpeta de mods de Vortex), prepara un plan, simula, aplica con manifiesto/backup y permite archivado / biblioteca de trabajo.
 
 Aplicación **independiente**; no afiliada a Square Enix, Steam, Nexus Mods ni Vortex.
 
 > Nombre exacto: **F7777techMods** (cuatro sietes). Carpeta de desarrollo: `02_Steam_Gestor_Mods` (sin renombrar).
-
-Repositorio GitHub y Releases: pendientes de URL confirmada (cuenta personal del autor; usuario GitHub aún no fijado en metadatos).
 
 ---
 
@@ -39,7 +39,7 @@ No se afirma el mismo procedimiento en todos los juegos ni compatibilidad comple
 
 ## Instalación portable
 
-1. Descarga `F7777techMods_v0.1.0_Windows_Portable.zip` (pre-release `v0.1.0-beta` cuando se publique).
+1. Descarga `F7777techMods_v0.1.0_Windows_Portable.zip` desde la [pre-release `v0.1.0-beta`](https://github.com/raulito07/F7777techMods/releases/tag/v0.1.0-beta).
 2. Extrae la carpeta completa.
 3. Ejecuta `F7777techMods\F7777techMods.exe`.
 4. Configura juegos y directorios.

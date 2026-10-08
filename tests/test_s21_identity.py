@@ -50,11 +50,16 @@ class S21IdentityTests(unittest.TestCase):
         self.assertEqual(__executable_name__, "F7777techMods")
         self.assertIn("F7777techMods", window_title())
         links = configured_links()
-        self.assertEqual(len(links), 1)
-        self.assertEqual(links[0][0], "Web oficial")
-        self.assertEqual(links[0][1], "https://fourseven.es/")
-        # GitHub / Releases siguen ocultos sin URL confirmada
-        self.assertFalse(any(lbl == "GitHub" for lbl, _ in links))
+        by_label = dict(links)
+        self.assertEqual(by_label["Web oficial"], "https://fourseven.es/")
+        self.assertEqual(
+            by_label["GitHub"], "https://github.com/raulito07/F7777techMods"
+        )
+        self.assertEqual(
+            by_label["Releases"],
+            "https://github.com/raulito07/F7777techMods/releases",
+        )
+        self.assertEqual(len(links), 3)
 
     def test_no_author_username_in_core_paths(self):
         for rel in (
@@ -80,7 +85,9 @@ class S21IdentityTests(unittest.TestCase):
         self.assertIn("about", keys)
         lines = about_lines()
         self.assertTrue(any("F7777techMods" in ln for ln in lines))
-        self.assertTrue(any("pendiente" in ln.lower() for ln in lines))
+        self.assertTrue(
+            any("github.com/raulito07/F7777techMods" in ln for ln in lines)
+        )
 
     def test_clean_boot_data_dir(self):
         td = tempfile.TemporaryDirectory()

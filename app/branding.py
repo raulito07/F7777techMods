@@ -41,8 +41,8 @@ LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html"
 
 # Enlaces oficiales — solo URLs confirmadas. Vacío = oculto (no placeholders activos).
 OFFICIAL_WEBSITE_URL = "https://fourseven.es/"
-OFFICIAL_GITHUB_URL = ""  # [PENDIENTE] repositorio GitHub (usuario no confirmado)
-OFFICIAL_RELEASES_URL = ""  # [PENDIENTE] GitHub Releases
+OFFICIAL_GITHUB_URL = "https://github.com/raulito07/F7777techMods"
+OFFICIAL_RELEASES_URL = "https://github.com/raulito07/F7777techMods/releases"
 
 INDEPENDENT_APP_NOTICE = (
     "Aplicación independiente. No está afiliada a Square Enix, Steam, "
