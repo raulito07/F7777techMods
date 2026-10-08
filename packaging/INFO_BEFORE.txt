@@ -1,0 +1,13 @@
+F7777techMods 0.1.0
+Four Seven Tech — Raúl Ruano Gil
+Licencia: GNU GPL v3 (o posterior)
+
+Esta aplicación es un gestor local de mods independiente.
+No modifica Steam ni Vortex automáticamente.
+No instala servicios ni tareas programadas.
+
+Los datos de configuración se guardan en:
+  %LOCALAPPDATA%\FourSevenTech\F7777techMods\
+
+Antes de aplicar mods a un juego real, lea las precauciones
+incluidas en la documentación (PRECAUCIONES.md).

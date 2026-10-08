@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "active_game_id": "ejemplo_juego",
+  "games": {
+    "ejemplo_juego": {
+      "id": "ejemplo_juego",
+      "name": "Ejemplo de juego",
+      "vortex_game_id": "",
+      "game_root": "C:\\Ruta\\Al\\Juego",
+      "mods_dir": "C:\\Ruta\\Al\\Juego\\Content\\Paks\\~mods",
+      "stage_dir": "C:\\Users\\TU_USUARIO\\AppData\\Roaming\\Vortex\\juego\\mods",
+      "adapter": "ue4_paks_mods",
+      "platform": "steam",
+      "data_mode": "isolated",
+      "data_dir_name": "ejemplo_juego",
+      "enabled": true,
+      "notes": "Copia este archivo a data/games.json y ajusta las rutas de TU equipo.",
+      "migration_status": "not_needed",
+      "migration_note": "",
+      "install_mode": "COPY",
+      "downloads_dir": "",
+      "destination_verified": false,
+      "path_status": "pending",
+      "archive_dir": "",
+      "work_library_dir": "",
+      "default_mod_source": "STAGING_VORTEX"
+    }
+  }
+}

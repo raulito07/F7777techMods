@@ -1,0 +1,84 @@
+# Four Seven Tech — F7777techMods
+# Excluir datos locales / privacidad antes de cualquier publicación.
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# --- IDE / SO ---
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- Datos locales del gestor (NO publicar) ---
+data/**
+!data/.gitkeep
+!data/README.md
+
+# --- Capturas de validación ---
+_s*_captures/
+**/_captures/
+
+# --- Informes internos con rutas de máquina ---
+# Públicos permitidos: S21, S23, S24_PREPUBLICACION
+INFORME_S0*.md
+INFORME_S1*.md
+INFORME_S2*.md
+!INFORME_S21.md
+!INFORME_S23.md
+!INFORME_S24_PREPUBLICACION.md
+INFORME_UI_*.md
+HANDOFF_*.md
+
+# --- Legacy scripts locales ---
+legacy/**
+
+# --- Cachés / temporales / sandboxes ---
+*.log
+.tmp/
+.temp/
+**/_s16_indep_sandbox*/
+**/_no_destination/
+**/sandbox_extract/
+**/own_archive_demo/
+**/_tmp*/
+**/tmp_sgm*/
+
+# --- Secretos ---
+*.pem
+*.p12
+*.key
+*credentials*
+*token*
+secrets/
+
+# --- Empaquetado / builds / release binaria (artefactos fuera del código) ---
+dist/
+build/
+release/
+releases/
+*.spec.bak
+*.exe
+*.msi
+*.zip
+!docs/**/*.md
+
+# --- Mods / contenido de juegos ---
+**/*.pak
+**/*.utoc
+**/*.ucas
+**/~mods/
+
+# --- Cursor / agentes (local) ---
+.cursor/projects/
+agent-transcripts/
+agent-tools/
