@@ -35,6 +35,6 @@ Get-FileHash -Algorithm SHA256 dist\release\<NUEVO_ZIP>
 - [ ] Pre-release o release con ZIP + SHA
 - [ ] Hash del asset = referencia documentada
 - [ ] Sin `data/` ni rutas privadas en el árbol
-- [ ] Sin reglas de IDE/agentes ni informes internos de sesión
+- [ ] Sin configuración local de entorno ni informes internos de desarrollo
 - [ ] `app/branding.py` con URLs reales
 - [ ] Sin Setup salvo decisión explícita futura

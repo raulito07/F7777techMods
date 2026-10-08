@@ -12,7 +12,7 @@ Gestor local **multijuego** de mods para Windows: inventaria packs desde un stag
 
 Aplicación **independiente**; no afiliada a Square Enix, Steam, Nexus Mods ni Vortex.
 
-> Nombre exacto: **F7777techMods** (cuatro sietes). Carpeta de desarrollo: `02_Steam_Gestor_Mods` (sin renombrar).
+> Nombre exacto del producto: **F7777techMods** (cuatro sietes consecutivos).
 
 ---
 
@@ -96,7 +96,7 @@ pip install -r requirements-build.txt
 python tools/s22_1_build_portable.py
 ```
 
-El ZIP se genera bajo `dist/release/`. No incluye `data/` del desarrollador ni reglas de IDE.  
+El ZIP se genera bajo `dist/release/`. No incluye `data/` del desarrollador ni configuración local de entorno.  
 Scripts Excel antiguos (`legacy/`) no son necesarios para ejecutar ni empaquetar; ver `requirements-legacy.txt`.
 
 ## Licencia

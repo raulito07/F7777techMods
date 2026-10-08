@@ -1,5 +1,5 @@
 # Four Seven Tech — F7777techMods
-# Excluir datos locales / privacidad antes de cualquier publicación.
+# Excluir datos locales y material no destinado a distribución pública.
 
 # --- Python ---
 __pycache__/
@@ -19,7 +19,7 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# --- Cursor / agentes / asistentes (solo local) ---
+# --- Configuración local del entorno de desarrollo ---
 .cursor/
 .codex/
 .claude/
@@ -45,6 +45,15 @@ _s*_captures/
 INFORME_S*.md
 INFORME_UI_*.md
 HANDOFF_*.md
+
+# --- Scripts de mantenimiento solo locales (no necesarios para build/tests públicos) ---
+tools/s07_*.py
+tools/s08_*.py
+tools/s10_*.py
+tools/s11_*.py
+tools/s12_*.py
+tools/s19_*.py
+tools/s20_ui_captures.py
 
 # --- Legacy scripts locales ---
 legacy/**
