@@ -60,6 +60,15 @@ _STATE_FILTER_VALUES = [
     "En destino",
     "No instalados",
     "Archivados ZIP",
+    # S28 estructura
+    "Paquete incompleto",
+    "Revisión manual",
+    "No soportado",
+    "Bloqueo estructura",
+    "Con variantes",
+    "Formato UE4 PAK",
+    "Formato UE5 IoStore",
+    "Formato genérico",
 ]
 
 
@@ -457,12 +466,14 @@ class LibraryView(ctk.CTkFrame):
 
             prios = load_priorities(app.session.priorities_json)
 
+        struct = getattr(app, "_structure_by_folder", None) or {}
         out = filter_mods(
             app.mods,
             query=self.search_var.get(),
             dimension=self.state_var.get(),
             source=self.source_var.get(),
             character=self.char_var.get(),
+            structure_by_folder=struct,
         )
 
         sk = self.sort_var.get()
@@ -735,7 +746,9 @@ class LibraryView(ctk.CTkFrame):
             prios = load_priorities(self.app.session.priorities_json)
         prio = prios.get(m.folder, "(sin prioridad)")
 
-        st = compute_mod_status(m)
+        struct_map = getattr(self.app, "_structure_by_folder", None) or {}
+        srep = struct_map.get(m.folder)
+        st = compute_mod_status(m, structure_report=srep)
         conf_txt = m.conflicto if m.conflicto else "(sin conflicto reportado)"
         staging_txt = self._staging_change_label(m)
         from ...core.game_status import lifecycle_for_mod
@@ -751,17 +764,47 @@ class LibraryView(ctk.CTkFrame):
             or ""
         )
         arch_hash_txt = (arch_hash[:16] + "…") if arch_hash else "(hash no disponible)"
+        if srep is not None:
+            grp_bits = []
+            for g in (srep.groups or [])[:6]:
+                miss = f" falta {','.join(g.missing)}" if g.missing else " OK"
+                grp_bits.append(f"{g.stem}{miss}")
+            var_bits = [
+                f"{v.label} ({len(v.members)})" for v in (srep.variants or [])[:6]
+            ]
+            iss_bits = [
+                f"{i.code}: {i.message}" for i in (srep.issues or [])[:5] if i.confirmed
+            ]
+            struct_txt = (
+                f"Formato: {srep.format_label}\n"
+                f"Clasificación: {srep.classification} ({srep.certainty.value})\n"
+                f"Estructura: {srep.explanation}\n"
+                f"Instalables: {len(srep.installable)} · Grupos: {len(srep.groups)} · "
+                f"Variantes: {len(srep.variants)}\n"
+                f"Grupos: {'; '.join(grp_bits) if grp_bits else '(ninguno)'}\n"
+                f"Variantes: {'; '.join(var_bits) if var_bits else '(ninguna)'}\n"
+                f"Problemas: {'; '.join(iss_bits) if iss_bits else '(ninguno confirmado)'}\n"
+                f"Bloqueo prep.: {'SI' if srep.blocks_prepare else 'no'} · "
+                f"Revisión: {'SI' if srep.needs_manual_review else 'no'}\n"
+                f"Motivo bloqueo: "
+                f"{srep.explanation if srep.blocks_prepare else '(no aplica)'}\n"
+            )
+        else:
+            struct_txt = (
+                "Estructura: (sin análisis aún — use Actualizar / Analizar plan)\n"
+            )
         self.detail_badges.configure(
             text=(
                 f"Juego: {game_name}\n"
                 f"Id carpeta: {m.folder}\n"
                 f"Ciclo UI: {life}\n"
                 f"Fuente: {src}\n"
+                f"{struct_txt}"
                 f"Flags: {status_badges_text(st)}\n"
                 f"Conflicto: {conf_txt}\n"
                 f"Staging local: {staging_txt}\n"
                 f"ZIP hash: {arch_hash_txt}\n"
-                f"(Plan ≠ destino ≠ ZIP ≠ WORK; Enabled Vortex ≠ instalado real)"
+                f"(Plan ≠ destino ≠ ZIP ≠ WORK; análisis ≠ Apply)"
             )
         )
 
