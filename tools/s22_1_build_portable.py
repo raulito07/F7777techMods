@@ -41,7 +41,12 @@ DIST = ROOT / "dist"
 RELEASE = DIST / "release"
 SPEC = ROOT / "packaging" / "F7777techMods.spec"
 ZIP_NAME = "F7777techMods_v0.1.0_Windows_Portable.zip"
-PRIVATE_MARKERS = ("Users\\raul_", "Users/raul_", "raul_\\Documents")
+
+
+def _private_markers() -> tuple[str, ...]:
+    """Patrones del perfil del host actual (sin hardcodear usuario en el fuente)."""
+    user = Path.home().name
+    return (f"Users\\{user}", f"Users/{user}", f"{user}\\Documents")
 
 
 def sha256_file(path: Path) -> str:
@@ -65,7 +70,7 @@ def scan_tree_for_private(root: Path) -> list[str]:
         if not p.is_file():
             continue
         rel = str(p.relative_to(root)).replace("\\", "/")
-        if any(m in rel for m in PRIVATE_MARKERS):
+        if any(m in rel for m in _private_markers()):
             bad.append(rel)
             continue
         if p.suffix.lower() in {".exe", ".dll", ".pyd", ".zip", ".pyc", ".png", ".jpg", ".jpeg"}:
@@ -76,7 +81,7 @@ def scan_tree_for_private(root: Path) -> list[str]:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        if any(m in text for m in PRIVATE_MARKERS):
+        if any(m in text for m in _private_markers()):
             bad.append(rel)
     return bad
 

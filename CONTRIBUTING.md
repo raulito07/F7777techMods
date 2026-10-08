@@ -10,15 +10,16 @@ Gracias por tu interés. Este proyecto es software libre bajo **GNU GPL v3**.
 
 ## Desarrollo local
 
+Ver [docs/DESARROLLO.md](docs/DESARROLLO.md) (ejecutar, tests, runtime diario, rollback, release portable).
+
 ```bat
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-python -m unittest discover -s tests -v
-python -m app
+python -m unittest discover -s tests
+python run_f7777techmods.py
 ```
 
-Empaquetado Windows: `pip install -r requirements-build.txt` y `tools/s22_1_build_portable.py`.  
 Scripts en `legacy/` (Excel FF7R): `pip install -r requirements-legacy.txt` — no forman parte del runtime.
 
 ## Cambios aceptables

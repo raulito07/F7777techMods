@@ -35,7 +35,6 @@ ALLOW_MENTION = {
     "tools/s20_privacy_audit.py",
     "tools/s21_privacy_git_audit.py",
     "tools/s22_1_build_portable.py",
-    "tools/s22_1_probe_portable.py",
     "tools/s23_git_privacy_inventory.py",
     "tests/test_s21_identity.py",
 }

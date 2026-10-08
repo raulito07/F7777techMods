@@ -45,6 +45,8 @@ _s*_captures/
 INFORME_S*.md
 INFORME_UI_*.md
 HANDOFF_*.md
+docs/*.png
+docs/**/*.png
 
 # --- Scripts de mantenimiento solo locales (no necesarios para build/tests públicos) ---
 tools/s07_*.py
