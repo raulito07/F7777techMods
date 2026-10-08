@@ -2,31 +2,30 @@
 
 **Empresa:** Four Seven Tech  
 **Autor:** Raúl Ruano Gil  
-**Estado:** preparación S21 — no publicar todavía.
+**Estado:** primera publicación pública completada (S25).  
+**Repo:** https://github.com/raulito07/F7777techMods  
+
+Esta carpeta solo aporta **plantillas** (`games.example.json`).  
+La guía de distribución vigente está en [docs/README_DISTRIBUCION.md](../docs/README_DISTRIBUCION.md).
 
 ## Qué NO debe ir al repositorio público
 
 - `data/` real (games.json, manifiestos, backups, thumbs, caches, resultados `_s*`).
 - Capturas `_s*_captures/` con rutas de usuario.
-- Informes internos `INFORME_S0*`–`INFORME_S2*` (excepto el informe de publicación acordado).
+- Informes internos no exceptuados en `.gitignore`.
 - Logs, tokens, `.env`, credenciales.
 - Mods (`.pak` / IoStore) ni carpetas Vortex/Steam.
 
-Usar `.gitignore`. Plantilla: `games.example.json` → `data/games.json` (local).
-
 ## Identidad
 
-- Producto: **F7777techMods**
+- Producto: **F7777techMods** (cuatro sietes)
 - Empresa: Four Seven Tech
 - Autor / copyright: Raúl Ruano Gil (c) 2026
-- Enlaces: `app/branding.py` (vacíos = ocultos)
-- Ejecutable futuro: `F7777techMods`
+- Web: https://fourseven.es/
+- Licencia: GNU GPL v3 (`LICENSE`)
+- Enlaces oficiales: `app/branding.py`
 
-## Licencia
-
-Ver `docs/LICENCIA_RECOMENDACIONES.md`. No aplicada automáticamente.
-
-## Arranque limpio
+## Arranque limpio de prueba
 
 ```bat
 set SGM_DATA_DIR=%TEMP%\f7777techmods_clean

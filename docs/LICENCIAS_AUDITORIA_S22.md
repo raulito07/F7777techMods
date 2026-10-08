@@ -29,7 +29,7 @@ No hay iconos, tipografías ni imágenes propias empaquetadas aparte de las que 
 
 | Paquete | Licencia | Nota |
 |---------|----------|------|
-| openpyxl | MIT | Solo tools/legacy; no importado por `app/` |
+| openpyxl | MIT | Solo `legacy/`; ver `requirements-legacy.txt`; excluido del portable |
 | et_xmlfile | MIT | Dependencia de openpyxl |
 | PyInstaller | GPLv2 + exception / Apache 2.0 (bootloader) | Herramienta de build; ver avisos PyInstaller |
 

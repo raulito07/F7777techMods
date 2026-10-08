@@ -18,6 +18,9 @@ python -m unittest discover -s tests -v
 python -m app
 ```
 
+Empaquetado Windows: `pip install -r requirements-build.txt` y `tools/s22_1_build_portable.py`.  
+Scripts en `legacy/` (Excel FF7R): `pip install -r requirements-legacy.txt` — no forman parte del runtime.
+
 ## Cambios aceptables
 
 - Correcciones de bugs del motor o UI
