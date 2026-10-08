@@ -76,13 +76,28 @@ Vortex (y Nexus) siguen siendo la fuente habitual de **descargas y actualizacion
 
 ## Desarrollo
 
+Requisitos: Windows 10/11, Python 3.11+ (validado con 3.12).
+
 ```bat
+git clone https://github.com/raulito07/F7777techMods.git
+cd F7777techMods
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+set SGM_DATA_DIR=%TEMP%\f7777techmods_clean
 python -m app
 python -m unittest discover -s tests -v
 ```
+
+### Construir el portable (local)
+
+```bat
+pip install -r requirements-build.txt
+python tools/s22_1_build_portable.py
+```
+
+El ZIP se genera bajo `dist/release/`. No incluye `data/` del desarrollador ni reglas de IDE.  
+Scripts Excel antiguos (`legacy/`) no son necesarios para ejecutar ni empaquetar; ver `requirements-legacy.txt`.
 
 ## Licencia
 
