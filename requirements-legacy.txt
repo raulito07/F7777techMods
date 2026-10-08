@@ -1,0 +1,3 @@
+# Dependencias solo para scripts en legacy/ (no runtime de F7777techMods).
+# No se empaquetan en el portable (PyInstaller las excluye).
+openpyxl>=3.1.0

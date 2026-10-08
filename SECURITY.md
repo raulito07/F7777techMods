@@ -9,7 +9,7 @@ F7777techMods es una aplicación de escritorio local. No envía telemetría por 
 Si crees haber encontrado una vulnerabilidad:
 
 1. **No** abras un issue público con exploits o datos privados.
-2. Contacta a Four Seven Tech vía https://fourseven.es/ (canal apropiado del sitio) o, cuando exista el repo, un aviso privado al titular.
+2. Contacta a Four Seven Tech vía https://fourseven.es/ (canal apropiado del sitio) o un aviso privado al titular del repo https://github.com/raulito07/F7777techMods.
 3. No abras un issue público con exploits; si usas issues, describe el problema de forma genérica **sin** payloads ni rutas personales.
 
 ## Buenas prácticas al usar el software
