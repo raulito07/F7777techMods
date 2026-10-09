@@ -152,29 +152,49 @@ def collect_offers(
             continue
 
         pak_list = [p.name for p in src_dir.rglob("*.pak")]
-        chosen = m.pak_elegido
+        from .component_selection import (
+            VARIANTES_EXCLUYENTES,
+            classify_components,
+            selected_paks,
+            selection_pending,
+        )
+
+        rep = classify_components(m)
+        m.selection_mode = rep.mode
+        selected = selected_paks(m)
         multi = m.multi or len(pak_list) > 1
-        if multi:
-            if not chosen:
-                variants.append(
-                    FileConflict(
-                        dest_rel="(variantes)",
-                        dest_key=f"variant::{m.folder}",
-                        kind=ConflictKind.VARIANT,
-                        offers=[],
-                        resolved=False,
-                        note=f"{m.name}: falta elegir variante .pak",
-                    )
+        if multi and selection_pending(m, rep):
+            variants.append(
+                FileConflict(
+                    dest_rel="(componentes)",
+                    dest_key=f"variant::{m.folder}",
+                    kind=ConflictKind.VARIANT,
+                    offers=[],
+                    resolved=False,
+                    note=(
+                        f"{m.name}: falta seleccionar componente(s) "
+                        f"[{rep.mode}]"
+                    ),
                 )
-                errors.append(f"{m.name}: falta variante .pak")
-                continue
-            match = next((p for p in pak_list if p.lower() == chosen.lower()), None)
+            )
+            errors.append(f"{m.name}: falta seleccionar componente(s) .pak")
+            continue
+        # Resolver nombres canónicos de staging
+        selected_canon: list[str] = []
+        for ch in selected:
+            match = next((p for p in pak_list if p.lower() == ch.lower()), None)
             if not match:
-                errors.append(f"{m.name}: '{chosen}' no existe. Opciones: {pak_list}")
+                errors.append(f"{m.name}: '{ch}' no existe. Opciones: {pak_list}")
                 continue
-            chosen = match
-        elif pak_list:
-            chosen = pak_list[0]
+            selected_canon.append(match)
+        if multi and not selected_canon:
+            errors.append(f"{m.name}: selección de componentes vacía")
+            continue
+        if not multi and pak_list and not selected_canon:
+            selected_canon = [pak_list[0]]
+        chosen_set = {x.lower() for x in selected_canon}
+        # Compat: chosen_pak = primero (clasificador legacy)
+        chosen = selected_canon[0] if selected_canon else None
 
         prio = _priority_of(m.folder, settings)
 
@@ -184,19 +204,30 @@ def collect_offers(
             if f.name.lower().startswith("vortex"):
                 continue
 
+            # Para multi-selección, pedir clasificación con este .pak como elegido
+            # (classify_file marca los no elegidos como VARIANT_ALT).
+            per_chosen = f.name if f.suffix.lower() == ".pak" and f.name.lower() in chosen_set else (chosen or None)
             fc = classify_file(
                 f,
                 src_dir,
                 adapter_id=adapter_id,
-                chosen_pak=chosen or None,
+                chosen_pak=per_chosen,
                 pak_names=pak_list,
             )
+            if f.suffix.lower() == ".pak" and pak_list:
+                if f.name.lower() not in chosen_set:
+                    continue
+                # Forzar instalable si el usuario lo seleccionó explícitamente
+                if fc.kind == ContentKind.VARIANT_ALT:
+                    fc = type(fc)(
+                        fc.path,
+                        fc.rel,
+                        ContentKind.INSTALLABLE,
+                        dest_rel=f.name,
+                        note="componente seleccionado",
+                    )
             if fc.kind != ContentKind.INSTALLABLE:
                 continue
-            # Una sola variante .pak por mod (también en generic_folder)
-            if f.suffix.lower() == ".pak" and pak_list:
-                if not chosen or f.name != chosen:
-                    continue
             dest_rel = fc.dest_rel or (
                 _norm_rel(f.name)
                 if f.suffix.lower() == ".pak"

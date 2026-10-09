@@ -309,8 +309,13 @@ def classify_mod(mod: ModEntry, adapter_id: str) -> ModClassification:
     pak_names = sorted({p.name for p in root.rglob("*.pak")})
     out.pak_names = pak_names
     multi = len(pak_names) > 1 or mod.multi
-    chosen = mod.pak_elegido or (pak_names[0] if len(pak_names) == 1 else "")
-    if mod.usar and multi and not mod.pak_elegido:
+    from .component_selection import selected_paks, selection_pending, classify_components
+
+    rep = classify_components(mod)
+    sel = selected_paks(mod)
+    chosen = sel[0] if sel else (pak_names[0] if len(pak_names) == 1 else "")
+    chosen_set = {x.lower() for x in sel}
+    if selection_pending(mod, rep):
         out.variant_pending = True
 
     for f in root.rglob("*"):
@@ -325,6 +330,19 @@ def classify_mod(mod: ModEntry, adapter_id: str) -> ModClassification:
         )
         if fc.kind == ContentKind.SKIP:
             continue
+        # Independientes: reclasificar VARIANT_ALT → INSTALLABLE si está seleccionado
+        if (
+            fc.kind == ContentKind.VARIANT_ALT
+            and f.suffix.lower() == ".pak"
+            and f.name.lower() in chosen_set
+        ):
+            fc = FileClassification(
+                fc.path,
+                fc.rel,
+                ContentKind.INSTALLABLE,
+                dest_rel=f.name,
+                note="componente seleccionado (colección)",
+            )
         out.files.append(fc)
         if fc.kind == ContentKind.INSTALLABLE:
             out.installable.append(fc.rel)

@@ -33,6 +33,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from ...core.apply import load_manifest
+from ...core.installed_state import plan_flags_for_dest_file
 from ...core.provenance import scan_destination, Provenance
 from ...core.adoption import plan_adoption, execute_adoption
 from ...core.hash_cache import HashCache
@@ -68,7 +69,11 @@ class InstalledView(ctk.CTkFrame):
         self.status.pack(anchor="w", padx=8)
         ctk.CTkLabel(
             self,
-            text="GESTIONADO = manifiesto · VORTEX = deploy verificable · EXTERNO = no atribuido · DRIFT = hash distinto",
+            text=(
+                "Lista archivos físicos en ~mods (no el plan). "
+                "Desactivar en Biblioteca no borra disco hasta Apply. "
+                "GESTIONADO = manifiesto · EXTERNO = sin manifiesto · DRIFT = hash distinto"
+            ),
             text_color=COLORS["text_muted"],
             wraplength=900,
             justify="left",
@@ -122,6 +127,8 @@ class InstalledView(ctk.CTkFrame):
             return
         want = self.filt.get()
         shown = 0
+        manifest = load_manifest(self.app._ctx()) if self.app.session else {}
+        mods = self.app.mods or []
         for info in inv.files:
             if want == "DRIFT" and info.integrity.value != "MODIFICADO_EXTERNO":
                 continue
@@ -131,10 +138,15 @@ class InstalledView(ctk.CTkFrame):
             fr = ctk.CTkFrame(self.body, fg_color=COLORS["bg_muted"])
             fr.pack(fill="x", pady=3, padx=4)
             sha = (info.sha256[:16] + "…") if info.sha256 else "(sin hash)"
+            plan_line = ""
+            meta = manifest.get(info.rel) if isinstance(manifest, dict) else None
+            if isinstance(meta, dict) and info.provenance.value == "GESTIONADO":
+                _a, _p, note = plan_flags_for_dest_file(info.rel, meta, mods)
+                plan_line = f"\nplan: {note}"
             txt = (
                 f"[{info.provenance.value}] {info.rel}\n"
                 f"integ={info.integrity.value}  size={info.size}  "
-                f"mod={info.mod_folder or '—'}  {sha}"
+                f"mod={info.mod_folder or '—'}  {sha}{plan_line}"
             )
             ctk.CTkLabel(fr, text=txt, justify="left", anchor="w").pack(
                 side="left", fill="x", expand=True, padx=8, pady=4

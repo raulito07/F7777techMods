@@ -52,6 +52,10 @@ AMBIGUO = "AMBIGUO"
 INCOMPLETO = "INCOMPLETO"
 NO_SOPORTADO = "NO_SOPORTADO"
 SIN_ARCHIVOS_INSTALABLES = "SIN_ARCHIVOS_INSTALABLES"
+FORMATO_NO_PAK = "FORMATO_NO_PAK"  # p. ej. .emov — no destino ~mods vía adaptador PAK
+
+# Extensiones observadas en staging FF7R que no son instalables con adaptador PAK
+_NON_PAK_MEDIA_SUFFIXES = frozenset({".emov", ".bk2", ".mp4", ".usm"})
 
 
 class Certainty(str, Enum):
@@ -325,6 +329,18 @@ def analyze_mod_structure(
             issues.extend(zr.issues)
 
     installable = list(mc.installable)
+    media_files: list[str] = []
+    if root.is_dir():
+        for f in root.rglob("*"):
+            if not f.is_file():
+                continue
+            if f.suffix.lower() in _NON_PAK_MEDIA_SUFFIXES:
+                try:
+                    media_files.append(f.relative_to(root).as_posix())
+                except ValueError:
+                    media_files.append(f.name)
+            if len(media_files) >= 20:
+                break
     groups: list[FileGroup] = []
     if ad.iostore_sidecars:
         # Agrupar por todos los pak/utoc/ucas vistos en el mod (no solo instalables)
@@ -394,10 +410,21 @@ def analyze_mod_structure(
         )
         blocks = True
         manual = True
+    elif not mc.has_installable and not pak_names and media_files:
+        classification = FORMATO_NO_PAK
+        certainty = Certainty.CONFIRMED
+        sample = ", ".join(Path(x).name for x in media_files[:4])
+        explanation = (
+            f"Contiene archivos de vídeo/medio ({sample}) sin .pak instalables. "
+            "El adaptador actual solo despliega .pak a ~mods; no se infiere destino "
+            "seguro para estos archivos."
+        )
+        blocks = False
+        manual = True
     elif not mc.has_installable and not pak_names:
         classification = SIN_ARCHIVOS_INSTALABLES
         explanation = "Sin archivos instalables según el adaptador."
-        blocks = True
+        blocks = bool(mod.usar)
     elif incomplete_groups and ad.iostore_sidecars:
         classification = INCOMPLETO
         certainty = Certainty.CONFIRMED
@@ -497,11 +524,24 @@ def analyze_library_structures(
     return out
 
 
-def structure_blocks_apply(reports: dict[str, StructureReport], mods: list[ModEntry]) -> bool:
-    """True si algún mod activo en plan tiene bloqueo de estructura."""
+def structure_blocks_apply(
+    reports: dict[str, StructureReport],
+    mods: list[ModEntry],
+    resolutions: dict[str, object] | None = None,
+) -> bool:
+    """True si algún mod activo tiene bloqueo efectivo (S40: no por .emov sin PAK)."""
+    from .structure_resolution import StructureResolution, effective_blocks_prepare
+
     active = {m.folder for m in mods if m.usar}
     for folder in active:
         r = reports.get(folder)
-        if r and r.blocks_prepare:
+        if not r:
+            continue
+        res = None
+        if resolutions:
+            raw = resolutions.get(folder)
+            if isinstance(raw, StructureResolution):
+                res = raw
+        if effective_blocks_prepare(r, res):
             return True
     return False

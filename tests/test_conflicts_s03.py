@@ -200,7 +200,12 @@ class ConflictsS03Tests(unittest.TestCase):
         s1 = _stage(self.base, "A", {"a.pak": b"A", "b.pak": b"B"})
         mods = [_mod("A", s1, "a.pak", multi=True, chosen="")]
         plan = plan_apply(mods, self.ctx, self.settings)
-        self.assertTrue(any("variante" in e.lower() for e in plan.errors))
+        self.assertTrue(
+            any(
+                ("variante" in e.lower() or "componente" in e.lower())
+                for e in plan.errors
+            )
+        )
 
     def test_resolution_persists(self):
         path = self.data / "conflict_resolutions.json"

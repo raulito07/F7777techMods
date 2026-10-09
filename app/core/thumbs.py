@@ -148,14 +148,15 @@ def prefetch_thumbs(
     on_done=None,
     *,
     thumbs_dir: Path | None = None,
+    schedule_main=None,
 ) -> None:
-    """Download missing thumbs in background."""
+    """Download missing thumbs in background (``on_done`` solo vía ``schedule_main``)."""
 
     def worker():
         for folder in folders:
             meta = meta_by_folder.get(folder) or {}
             ensure_thumb(folder, meta, thumbs_dir=thumbs_dir)
-        if on_done:
-            on_done()
+        if on_done and schedule_main:
+            schedule_main(on_done)
 
     threading.Thread(target=worker, daemon=True).start()

@@ -172,6 +172,10 @@ class GamePaths:
         return self.data_dir / "conflict_resolutions.json"
 
     @property
+    def structure_resolutions_json(self) -> Path:
+        return self.data_dir / "structure_resolutions.json"
+
+    @property
     def hash_cache_json(self) -> Path:
         return self.data_dir / "hash_cache.json"
 

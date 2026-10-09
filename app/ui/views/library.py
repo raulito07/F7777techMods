@@ -31,6 +31,12 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
+from ...core.library_selection import LibrarySelection
+from ...core.library_catalog_model import (
+    TAG_FILTER_ALL,
+    build_catalog_item,
+    collect_tags_from_mods,
+)
 from ...core.library_status import (
     FILTER_ALL,
     archive_candidates,
@@ -39,6 +45,35 @@ from ...core.library_status import (
     status_badges_text,
     work_restore_candidates,
 )
+from ...core.library_view_prefs import (
+    CARD_TO_UI,
+    LAYOUT_CATALOG,
+    LAYOUT_TABLE,
+    LAYOUT_TO_UI,
+    LAYOUT_VISUAL_LIST,
+    MODE_FULL,
+    MODE_PAGINATED,
+    MODE_TO_UI,
+    TREE_INSERT_BATCH,
+    UI_CARD_MEDIUM,
+    UI_LABEL_FULL,
+    UI_LABEL_PAGINATED,
+    UI_LAYOUT_CATALOG,
+    UI_LAYOUT_TABLE,
+    UI_LAYOUT_VISUAL,
+    UI_TO_CARD,
+    UI_TO_LAYOUT,
+    UI_TO_MODE,
+    display_slice,
+    list_summary_text,
+    load_library_card_size,
+    load_library_layout,
+    load_library_view_mode,
+    save_library_card_size,
+    save_library_layout,
+    save_library_view_mode,
+)
+from .library_visual_pane import LibraryVisualPane
 from ..theme import COLORS, LIBRARY_PAGE_SIZE
 
 _STATE_FILTER_VALUES = [
@@ -113,10 +148,22 @@ class LibraryView(ctk.CTkFrame):
 
         self.search_var = tk.StringVar(value="")
         self.state_var = tk.StringVar(value="TODOS")
-        self.char_var = tk.StringVar(value="TODOS")
+        self.tag_var = tk.StringVar(value=TAG_FILTER_ALL)
         self.source_var = tk.StringVar(value="TODAS")
         self.sort_var = tk.StringVar(value="Nombre")
         self.page_size_var = tk.StringVar(value=str(LIBRARY_PAGE_SIZE))
+        self.view_mode_var = tk.StringVar(value=UI_LABEL_PAGINATED)
+        self.layout_var = tk.StringVar(value=UI_LAYOUT_TABLE)
+        self.card_size_var = tk.StringVar(value=UI_CARD_MEDIUM)
+        self._view_mode = MODE_PAGINATED
+        self._layout_mode = LAYOUT_TABLE
+        self._card_size = "medium"
+        self._page_size_menu = None
+        self._card_size_menu = None
+        self._pager_frame = None
+        self._large_hint = None
+        self._library_sel = LibrarySelection()
+        self._visible_order: list[str] = []
 
         def _labeled(parent, text, widget_factory):
             cell = ctk.CTkFrame(parent, fg_color="transparent")
@@ -148,16 +195,16 @@ class LibraryView(ctk.CTkFrame):
             m.pack(anchor="w")
             return m
 
-        def make_char(cell):
-            self.char_menu = ctk.CTkOptionMenu(
+        def make_tag(cell):
+            self.tag_menu = ctk.CTkOptionMenu(
                 cell,
-                variable=self.char_var,
-                values=["TODOS"],
-                width=120,
+                variable=self.tag_var,
+                values=[TAG_FILTER_ALL],
+                width=140,
                 command=lambda _=None: self._on_filter_change(),
             )
-            self.char_menu.pack(anchor="w")
-            return self.char_menu
+            self.tag_menu.pack(anchor="w")
+            return self.tag_menu
 
         def make_source(cell):
             m = ctk.CTkOptionMenu(
@@ -190,14 +237,53 @@ class LibraryView(ctk.CTkFrame):
                 command=lambda _=None: self._on_filter_change(),
             )
             m.pack(anchor="w")
+            self._page_size_menu = m
+            return m
+
+        def make_view_mode(cell):
+            m = ctk.CTkOptionMenu(
+                cell,
+                variable=self.view_mode_var,
+                values=[UI_LABEL_PAGINATED, UI_LABEL_FULL],
+                width=110,
+                command=lambda _=None: self._on_view_mode_change(),
+            )
+            m.pack(anchor="w")
             return m
 
         _labeled(filters, "Buscar", make_search)
         self.search_var.trace_add("write", lambda *_: self._debounce_redraw())
         _labeled(filters, "Dimensión / estado", make_state)
-        _labeled(filters, "Personaje", make_char)
+        _labeled(filters, "Etiqueta", make_tag)
         _labeled(filters, "Fuente", make_source)
         _labeled(filters, "Orden", make_sort)
+        _labeled(filters, "Vista", make_view_mode)
+
+        def make_layout(cell):
+            m = ctk.CTkOptionMenu(
+                cell,
+                variable=self.layout_var,
+                values=[UI_LAYOUT_TABLE, UI_LAYOUT_CATALOG, UI_LAYOUT_VISUAL],
+                width=120,
+                command=lambda _=None: self._on_layout_change(),
+            )
+            m.pack(anchor="w")
+            return m
+
+        def make_card_size(cell):
+            m = ctk.CTkOptionMenu(
+                cell,
+                variable=self.card_size_var,
+                values=["Pequeña", "Mediana", "Grande"],
+                width=100,
+                command=lambda _=None: self._on_card_size_change(),
+            )
+            m.pack(anchor="w")
+            self._card_size_menu = m
+            return m
+
+        _labeled(filters, "Presentación", make_layout)
+        _labeled(filters, "Tarjeta", make_card_size)
         _labeled(filters, "Pág.", make_page_size)
 
         ctk.CTkButton(
@@ -211,7 +297,7 @@ class LibraryView(ctk.CTkFrame):
             self,
             text=(
                 "Dimensiones independientes: Plan ≠ Destino ≠ ZIP ≠ WORK ≠ Staging. "
-                "Rojo=conflicto · Ámbar=variante. Multi-sel.: Ctrl/Shift. "
+                "Verde=Apply listo · Ámbar=revisión · Rojo=bloqueo · Gris=sin cambios. "
                 "Acciones de PLAN no escriben en el juego; ZIP/WORK solo seleccionan candidatos."
             ),
             text_color=COLORS["text_muted"],
@@ -219,6 +305,14 @@ class LibraryView(ctk.CTkFrame):
             anchor="w",
         )
         legend.pack(fill="x", padx=6, pady=(2, 2))
+        self._large_hint = ctk.CTkLabel(
+            self,
+            text="",
+            text_color=COLORS["text_muted"],
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+        )
+        self._large_hint.pack(fill="x", padx=8, pady=(0, 2))
 
         bulk = ctk.CTkFrame(self, fg_color=COLORS["bg_muted"], corner_radius=8)
         bulk.pack(fill="x", padx=2, pady=(0, 4))
@@ -248,7 +342,7 @@ class LibraryView(ctk.CTkFrame):
         ).pack(side="left", padx=3, pady=6)
         ctk.CTkButton(
             bulk,
-            text="Simular selección",
+            text="Simular cambios (selección)",
             width=130,
             fg_color=COLORS["btn_secondary"],
             command=app.simulate_selection_plan,
@@ -283,19 +377,26 @@ class LibraryView(ctk.CTkFrame):
         # Paginación abajo; la tabla ocupa el resto (orden de pack importante)
         pager = ctk.CTkFrame(left, fg_color="transparent")
         pager.pack(side="bottom", fill="x", padx=6, pady=4)
-        ctk.CTkButton(pager, text="« Anterior", width=100, command=self.prev_page).pack(
-            side="left"
+        self._pager_frame = pager
+        self._btn_prev = ctk.CTkButton(
+            pager, text="« Anterior", width=100, command=self.prev_page
         )
+        self._btn_prev.pack(side="left")
         self.page_label = ctk.CTkLabel(pager, text="Página 1")
         self.page_label.pack(side="left", padx=12)
-        ctk.CTkButton(pager, text="Siguiente »", width=100, command=self.next_page).pack(
-            side="left"
+        self._btn_next = ctk.CTkButton(
+            pager, text="Siguiente »", width=100, command=self.next_page
         )
+        self._btn_next.pack(side="left")
         self.page_count = ctk.CTkLabel(pager, text="", text_color=COLORS["text_muted"])
         self.page_count.pack(side="right", padx=8)
 
-        tree_wrap = tk.Frame(left, bg="#1a222d", highlightthickness=0)
-        tree_wrap.pack(side="top", fill="both", expand=True, padx=2, pady=2)
+        self._list_host = ctk.CTkFrame(left, fg_color="transparent")
+        self._list_host.pack(side="top", fill="both", expand=True, padx=2, pady=2)
+
+        tree_wrap = tk.Frame(self._list_host, bg="#1a222d", highlightthickness=0)
+        self.tree_wrap = tree_wrap
+        tree_wrap.pack(side="top", fill="both", expand=True)
 
         cols = ("usar", "mod", "estado", "fuente", "variante", "prio", "destino")
         self.tree = ttk.Treeview(
@@ -325,11 +426,21 @@ class LibraryView(ctk.CTkFrame):
 
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<Double-1>", lambda e: app.toggle_selected())
-        # Estados: no usar rojo salvo conflicto real
+        self.tree.bind("<Return>", lambda e: app.toggle_selected())
+
+        self.visual_pane = LibraryVisualPane(
+            self._list_host,
+            on_click=self._on_mod_click,
+        )
+        self.visual_pane.pack(fill="both", expand=True)
+        self.visual_pane.pack_forget()
+        # S39: VERDE=preparado Apply · AMARILLO=revisión · ROJO=bloqueo · GRIS=sin cambios
         self.tree.tag_configure("off", background="#2a2a32", foreground="#a0a8b4")
-        self.tree.tag_configure("active", background="#14352a", foreground="#e8eef7")
-        self.tree.tag_configure("installed", background="#1a2e3d", foreground="#e8eef7")
-        self.tree.tag_configure("active_inst", background="#123d45", foreground="#e8eef7")
+        self.tree.tag_configure("unchanged", background="#2a2a32", foreground="#a0a8b4")
+        self.tree.tag_configure("active", background="#1a2e3d", foreground="#c8d0dc")
+        self.tree.tag_configure("installed", background="#1a2e3d", foreground="#c8d0dc")
+        self.tree.tag_configure("active_inst", background="#1a2e3d", foreground="#c8d0dc")
+        self.tree.tag_configure("ready", background="#14352a", foreground="#d8ffe8")
         self.tree.tag_configure("conflict", background="#5c1a1a", foreground="#ffe4e4")
         self.tree.tag_configure("pending", background="#3b2f14", foreground="#fff3d0")
 
@@ -347,10 +458,27 @@ class LibraryView(ctk.CTkFrame):
         self.detail_title.pack(anchor="w", padx=10, pady=(0, 4))
         self.detail_image = ctk.CTkLabel(right, text="(sin imagen)", width=280, height=130)
         self.detail_image.pack(padx=10, pady=4)
-        self.detail_badges = ctk.CTkLabel(
+        self.detail_state = ctk.CTkLabel(
+            right, text="", justify="left", wraplength=280, anchor="w"
+        )
+        self.detail_state.pack(anchor="w", padx=10, pady=2)
+        self.detail_warnings = ctk.CTkLabel(
+            right, text="", justify="left", wraplength=280, text_color="#ffb4b4", anchor="w"
+        )
+        self.detail_warnings.pack(anchor="w", padx=10, pady=0)
+        self.detail_provenance = ctk.CTkLabel(
             right, text="", justify="left", wraplength=280, text_color=COLORS["text_muted"]
         )
-        self.detail_badges.pack(anchor="w", padx=10, pady=2)
+        self.detail_provenance.pack(anchor="w", padx=10, pady=2)
+        self._tech_visible = False
+        self._btn_tech = ctk.CTkButton(
+            right,
+            text="Información técnica ▼",
+            width=200,
+            fg_color=COLORS["btn_secondary"],
+            command=self._toggle_detail_technical,
+        )
+        self._btn_tech.pack(anchor="w", padx=10, pady=2)
 
         ctk.CTkLabel(right, text="Descripción", text_color=COLORS["text_muted"]).pack(
             anchor="w", padx=10
@@ -358,20 +486,23 @@ class LibraryView(ctk.CTkFrame):
         self.detail_desc = ctk.CTkTextbox(right, height=100, wrap="word")
         self.detail_desc.pack(fill="both", expand=True, padx=10, pady=2)
 
-        ctk.CTkLabel(right, text="Información", text_color=COLORS["text_muted"]).pack(
-            anchor="w", padx=10, pady=(6, 0)
-        )
-        self.detail_meta = ctk.CTkTextbox(right, height=180, wrap="word")
+        self.detail_meta = ctk.CTkTextbox(right, height=160, wrap="word")
         self.detail_meta.pack(fill="both", expand=False, padx=10, pady=2)
+        self.detail_meta.pack_forget()
 
         btn_fr = ctk.CTkFrame(right, fg_color="transparent")
         btn_fr.pack(fill="x", padx=10, pady=6)
         ctk.CTkButton(
-            btn_fr, text="Activar / Desactivar (plan)", command=app.toggle_selected
+            btn_fr, text="Activar / Desactivar en plan", command=app.toggle_selected
         ).pack(fill="x", pady=2)
-        ctk.CTkButton(btn_fr, text="Elegir variante .pak", command=app.choose_pak).pack(
+        ctk.CTkButton(
+            btn_fr, text="Elegir componentes .pak", command=app.choose_pak
+        ).pack(
             fill="x", pady=2
         )
+        ctk.CTkButton(
+            btn_fr, text="Revisar estructura", command=app.review_structure
+        ).pack(fill="x", pady=2)
         ctk.CTkButton(
             btn_fr, text="Simular este mod", command=app.simulate_selected_preview
         ).pack(fill="x", pady=2)
@@ -408,7 +539,8 @@ class LibraryView(ctk.CTkFrame):
         try:
             w = max(200, self._detail_frame.winfo_width() - 24)
             self.detail_title.configure(wraplength=w)
-            self.detail_badges.configure(wraplength=w)
+            self.detail_state.configure(wraplength=w)
+            self.detail_provenance.configure(wraplength=w)
         except Exception:
             pass
 
@@ -420,6 +552,148 @@ class LibraryView(ctk.CTkFrame):
             self.after(50, lambda: self.paned.sash_place(0, max(480, int(self.winfo_width() * 0.68)), 0))
         except Exception:
             pass
+
+    def is_full_view(self) -> bool:
+        return self._view_mode == MODE_FULL
+
+    def _sync_view_mode_from_var(self) -> None:
+        label = self.view_mode_var.get()
+        self._view_mode = UI_TO_MODE.get(label, MODE_PAGINATED)
+
+    def _on_view_mode_change(self) -> None:
+        self._sync_view_mode_from_var()
+        self.page = 0
+        if self.app.session:
+            save_library_view_mode(
+                self.app.session.record.id,
+                self._view_mode,
+            )
+        self._update_pager_controls()
+        self.redraw()
+
+    def _update_pager_controls(self) -> None:
+        full = self.is_full_view()
+        state = "disabled" if full else "normal"
+        try:
+            self._btn_prev.configure(state=state)
+            self._btn_next.configure(state=state)
+        except Exception:
+            pass
+        if self._page_size_menu is not None:
+            try:
+                self._page_size_menu.configure(state=state)
+            except Exception:
+                pass
+        if full:
+            self.page_label.configure(text="Vista completa")
+            self.page_count.configure(text="")
+
+    def apply_view_prefs_for_game(self, game_id: str) -> None:
+        mode = load_library_view_mode(game_id)
+        self._view_mode = mode
+        self.view_mode_var.set(MODE_TO_UI.get(mode, UI_LABEL_PAGINATED))
+        layout = load_library_layout(game_id)
+        self._layout_mode = layout
+        self.layout_var.set(LAYOUT_TO_UI.get(layout, UI_LAYOUT_TABLE))
+        cs = load_library_card_size(game_id)
+        self._card_size = cs
+        self.card_size_var.set(CARD_TO_UI.get(cs, UI_CARD_MEDIUM))
+        self._update_pager_controls()
+        self._update_layout_controls()
+        self._switch_layout_display()
+
+    def _on_layout_change(self) -> None:
+        self._layout_mode = UI_TO_LAYOUT.get(self.layout_var.get(), LAYOUT_TABLE)
+        if self.app.session:
+            save_library_layout(self.app.session.record.id, self._layout_mode)
+        self._update_layout_controls()
+        self._sync_selection_views()
+        self._switch_layout_display()
+        self.redraw()
+
+    def _on_card_size_change(self) -> None:
+        self._card_size = UI_TO_CARD.get(self.card_size_var.get(), "medium")
+        if self.app.session:
+            save_library_card_size(self.app.session.record.id, self._card_size)
+        if self._layout_mode == LAYOUT_CATALOG:
+            self.redraw()
+
+    def _update_layout_controls(self) -> None:
+        cat = self._layout_mode == LAYOUT_CATALOG
+        state = "normal" if cat else "disabled"
+        if self._card_size_menu is not None:
+            try:
+                self._card_size_menu.configure(state=state)
+            except Exception:
+                pass
+
+    def _switch_layout_display(self) -> None:
+        if self._layout_mode == LAYOUT_TABLE:
+            self.visual_pane.pack_forget()
+            self.tree_wrap.pack(side="top", fill="both", expand=True)
+        else:
+            self.tree_wrap.pack_forget()
+            self.visual_pane.pack(fill="both", expand=True)
+            self.visual_pane.set_thumb_cache(getattr(self.app, "_thumb_cache", None))
+            self.visual_pane.set_thumb_async(getattr(self.app, "_thumb_async", None))
+
+    def _on_mod_click(self, folder: str, evt) -> None:
+        ctrl = bool(getattr(evt, "state", 0) & 0x4)
+        shift = bool(getattr(evt, "state", 0) & 0x1)
+        self._library_sel.click(
+            folder,
+            visible_order=self._visible_order,
+            ctrl=ctrl,
+            shift=shift,
+        )
+        self._sync_selection_views()
+        self.on_select()
+
+    def _sync_selection_views(self) -> None:
+        sel = list(self._library_sel.selected)
+        if self._layout_mode == LAYOUT_TABLE:
+            ids = [f for f in sel if self.tree.exists(f)]
+            if ids:
+                self.tree.selection_set(ids)
+                self.tree.focus(ids[-1])
+            else:
+                self.tree.selection_remove(self.tree.selection())
+        else:
+            self.visual_pane.set_selection(self._library_sel.selected)
+
+    def _toggle_detail_technical(self) -> None:
+        self._tech_visible = not self._tech_visible
+        if self._tech_visible:
+            self.detail_meta.pack(fill="both", expand=False, padx=10, pady=2)
+            self._btn_tech.configure(text="Información técnica ▲")
+        else:
+            self.detail_meta.pack_forget()
+            self._btn_tech.configure(text="Información técnica ▼")
+
+    def _catalog_items(self, mods: list) -> list:
+        gid = self.app.session.record.id if self.app.session else ""
+        intel_map = getattr(self.app, "mod_intel", None) or {}
+        struct_map = getattr(self.app, "_structure_by_folder", None) or {}
+        out = []
+        for m in mods:
+            srep = struct_map.get(m.folder)
+            intel = intel_map.get(m.folder)
+            st = compute_mod_status(m, structure_report=srep, intel=intel)
+            tag, lab = self._row_tag(m)
+            warns = []
+            if m.conflicto:
+                warns.append(m.conflicto[:120])
+            out.append(
+                build_catalog_item(
+                    m,
+                    game_id=gid,
+                    status=st,
+                    state_tag=tag,
+                    state_label=lab,
+                    warnings=warns,
+                )
+            )
+        return out
 
     def _on_filter_change(self) -> None:
         self.page = 0
@@ -452,7 +726,7 @@ class LibraryView(ctk.CTkFrame):
     def clear_filters(self) -> None:
         self.search_var.set("")
         self.state_var.set(FILTER_ALL)
-        self.char_var.set("TODOS")
+        self.tag_var.set(TAG_FILTER_ALL)
         self.source_var.set("TODAS")
         self.sort_var.set("Nombre")
         self.page = 0
@@ -467,13 +741,15 @@ class LibraryView(ctk.CTkFrame):
             prios = load_priorities(app.session.priorities_json)
 
         struct = getattr(app, "_structure_by_folder", None) or {}
+        intel_map = getattr(app, "mod_intel", None) or {}
         out = filter_mods(
             app.mods,
             query=self.search_var.get(),
             dimension=self.state_var.get(),
             source=self.source_var.get(),
-            character=self.char_var.get(),
+            tag=self.tag_var.get(),
             structure_by_folder=struct,
+            intel_by_folder=intel_map,
         )
 
         sk = self.sort_var.get()
@@ -502,11 +778,15 @@ class LibraryView(ctk.CTkFrame):
         return out
 
     def prev_page(self) -> None:
+        if self.is_full_view():
+            return
         if self.page > 0:
             self.page -= 1
             self._paint_page()
 
     def next_page(self) -> None:
+        if self.is_full_view():
+            return
         ps = self.page_size()
         max_page = max(0, (len(self._filtered_cache) - 1) // ps)
         if self.page < max_page:
@@ -514,116 +794,214 @@ class LibraryView(ctk.CTkFrame):
             self._paint_page()
 
     def redraw(self) -> None:
-        chars = sorted({m.character_main for m in self.app.mods})
-        cur = self.char_var.get()
-        self.char_menu.configure(values=["TODOS"] + chars)
-        if cur not in (["TODOS"] + chars):
-            self.char_var.set("TODOS")
+        tags = collect_tags_from_mods(self.app.mods)
+        cur = self.tag_var.get()
+        self.tag_menu.configure(values=[TAG_FILTER_ALL] + tags)
+        if cur not in ([TAG_FILTER_ALL] + tags):
+            self.tag_var.set(TAG_FILTER_ALL)
+        self._sync_view_mode_from_var()
         self._filtered_cache = self.filtered()
-        max_page = max(0, (len(self._filtered_cache) - 1) // self.page_size())
-        if self.page > max_page:
-            self.page = max_page
+        if not self.is_full_view():
+            max_page = max(0, (len(self._filtered_cache) - 1) // self.page_size())
+            if self.page > max_page:
+                self.page = max_page
         self._paint_page()
 
     def _row_tag(self, m) -> tuple[str, str]:
-        """Devuelve (tag, texto_estado) a partir de dimensiones independientes."""
-        st = compute_mod_status(m)
-        return st.row_tag, st.row_label
+        """S39: verde solo si operación Apply preparada sin bloqueos; no por estar en plan."""
+        from ...core.apply_confirm import apply_row_visual, mod_apply_pending_flags
+
+        from ...core.structure_resolution import (
+            effective_blocks_prepare,
+            structure_row_state,
+        )
+
+        app = self.app
+        plan = getattr(app, "_last_plan", None)
+        ready = bool(
+            getattr(app, "_analysis_ready", False)
+            and getattr(app, "_analysis_for_gen", -1) == getattr(app, "_session_gen", -2)
+        )
+        reports = getattr(app, "_structure_by_folder", None) or {}
+        rep = reports.get(m.folder)
+        resolutions = getattr(app, "_structure_resolutions", None) or {}
+        res = resolutions.get(m.folder)
+        struct = False
+        struct_lab = ""
+        if rep is not None:
+            struct = effective_blocks_prepare(rep, res)
+            _tag, struct_lab = structure_row_state(rep, res, usar=m.usar)
+        pending = mod_apply_pending_flags(m, plan)
+        if pending:
+            return apply_row_visual(
+                m,
+                plan,
+                structure_blocks=struct,
+                structure_label=struct_lab,
+                analysis_ready=ready,
+            )
+        if struct_lab and m.usar:
+            tag, lab = structure_row_state(rep, res, usar=m.usar)
+            if tag == "ready":
+                tag = "pending"
+            return tag, lab
+        return apply_row_visual(
+            m, plan, structure_blocks=struct, structure_label=struct_lab, analysis_ready=ready
+        )
+
+    def _insert_tree_row(self, m, prios: dict) -> None:
+        tag, estado = self._row_tag(m)
+        prio = prios.get(m.folder, "—")
+        name = m.name if len(m.name) <= 48 else m.name[:45] + "…"
+        from ...core.component_selection import selected_paks
+
+        sel = selected_paks(m)
+        if m.multi and not sel:
+            var = "(elige)"
+        elif len(sel) > 1:
+            var = f"{len(sel)} comps"
+        elif sel:
+            var = sel[0]
+        else:
+            var = "—"
+        if len(var) > 28:
+            var = var[:25] + "…"
+        src = getattr(m, "source_kind", "STAGING_VORTEX") or "STAGING_VORTEX"
+        src_short = "WORK" if src == "WORK_LIBRARY" else "VORTEX"
+        if getattr(m, "archived", False):
+            src_short += "+Z"
+        self.tree.insert(
+            "",
+            "end",
+            iid=m.folder,
+            values=(
+                "SI" if m.usar else "NO",
+                name,
+                estado if len(estado) <= 40 else estado[:37] + "…",
+                src_short,
+                var,
+                prio,
+                "ON" if m.on_disk else "off",
+            ),
+            tags=(tag,),
+        )
 
     def _paint_page(self) -> None:
         app = self.app
+        self._pull_tree_selection_if_needed()
         prios = {}
         if app.session:
             from ...core.priority_store import load_priorities
 
             prios = load_priorities(app.session.priorities_json)
 
-        # Conservar selección si sigue visible
-        prev = None
-        sel = self.tree.selection()
-        if sel:
-            prev = sel[0]
-
-        self.tree.delete(*self.tree.get_children())
-        ps = self.page_size()
-        start = self.page * ps
-        chunk = self._filtered_cache[start : start + ps]
-        for m in chunk:
-            tag, estado = self._row_tag(m)
-            prio = prios.get(m.folder, "—")
-            # Truncar nombre en tabla; completo en detalle
-            name = m.name if len(m.name) <= 48 else m.name[:45] + "…"
-            var = m.pak_elegido or ("(elige 1)" if m.multi else "—")
-            if len(var) > 28:
-                var = var[:25] + "…"
-            src = getattr(m, "source_kind", "STAGING_VORTEX") or "STAGING_VORTEX"
-            src_short = "WORK" if src == "WORK_LIBRARY" else "VORTEX"
-            if getattr(m, "archived", False):
-                src_short += "+Z"
-            self.tree.insert(
-                "",
-                "end",
-                iid=m.folder,
-                values=(
-                    "SI" if m.usar else "NO",
-                    name,
-                    estado if len(estado) <= 40 else estado[:37] + "…",
-                    src_short,
-                    var,
-                    prio,
-                    "ON" if m.on_disk else "off",
-                ),
-                tags=(tag,),
-            )
-        total = len(self._filtered_cache)
-        max_page = max(0, (total - 1) // ps) if total else 0
-        self.page_label.configure(text=f"Página {self.page + 1} / {max_page + 1}")
-        self.page_count.configure(text=f"{ps} por página")
-        self.count_label.configure(
-            text=f"{total} resultado(s)  ·  {len(app.mods)} en memoria"
+        chunk = display_slice(
+            self._filtered_cache,
+            mode=self._view_mode,
+            page=self.page,
+            page_size=self.page_size(),
         )
-        if prev and self.tree.exists(prev):
-            self.tree.selection_set(prev)
-            self.tree.see(prev)
+        self._visible_order = [m.folder for m in chunk]
+        if self._layout_mode == LAYOUT_TABLE:
+            self.tree.delete(*self.tree.get_children())
+            for i, m in enumerate(chunk):
+                self._insert_tree_row(m, prios)
+                if i and i % TREE_INSERT_BATCH == 0:
+                    try:
+                        self.tree.update_idletasks()
+                    except Exception:
+                        pass
+        else:
+            items = self._catalog_items(chunk)
+            layout_key = (
+                "catalog" if self._layout_mode == LAYOUT_CATALOG else "visual_list"
+            )
+            self.visual_pane.start_paint(
+                items,
+                layout=layout_key,
+                card_size=self._card_size,
+                selected=set(self._library_sel.selected),
+            )
+
+        total = len(self._filtered_cache)
+        head, pager_hint, warn_large = list_summary_text(
+            mode=self._view_mode,
+            total_filtered=total,
+            page=self.page,
+            page_size=self.page_size(),
+            total_in_memory=len(app.mods),
+        )
+        self.count_label.configure(text=head)
+        if self.is_full_view():
+            self.page_label.configure(text="Vista completa")
+            self.page_count.configure(text="")
+        else:
+            ps = self.page_size()
+            max_page = max(0, (total - 1) // ps) if total else 0
+            self.page_label.configure(text=f"Página {self.page + 1} / {max_page + 1}")
+            self.page_count.configure(text=pager_hint)
+        if self._large_hint is not None:
+            if warn_large:
+                self._large_hint.configure(
+                    text=(
+                        f"Vista completa en biblioteca grande ({total} mods); "
+                        "puede tardar más al filtrar o cambiar orden."
+                    )
+                )
+            else:
+                self._large_hint.configure(text="")
+        self._sync_selection_views()
+        primary = self._library_sel.primary()
+        if primary and self._layout_mode == LAYOUT_TABLE and self.tree.exists(primary):
+            self.tree.see(primary)
         self._update_sel_count()
 
+    def _pull_tree_selection_if_needed(self) -> None:
+        if self._layout_mode != LAYOUT_TABLE:
+            return
+        ts = list(self.tree.selection())
+        if ts:
+            self._library_sel.set_folders(ts)
+            focus = self.tree.focus()
+            if focus:
+                self._library_sel.anchor = focus
+
     def selected(self):
-        sel = self.tree.selection()
-        if not sel:
-            return None
-        return self.app.by_id.get(sel[0])
+        self._pull_tree_selection_if_needed()
+        fid = self._library_sel.primary()
+        return self.app.by_id.get(fid) if fid else None
 
     def selected_many(self) -> list:
+        self._pull_tree_selection_if_needed()
         out = []
-        for iid in self.tree.selection():
-            m = self.app.by_id.get(iid)
+        for fid in self._library_sel.selected:
+            m = self.app.by_id.get(fid)
             if m:
                 out.append(m)
         return out
 
     def select_page(self) -> None:
-        kids = self.tree.get_children()
-        if kids:
-            self.tree.selection_set(kids)
+        self._library_sel.set_folders(list(self._visible_order))
+        self._sync_selection_views()
         self._update_sel_count()
         self.on_select()
 
     def select_filtered(self) -> None:
-        """Selecciona todos los filtrados visibles en la página actual + avisa del total."""
+        """Selecciona filtrados visibles; en vista completa = todos los filtrados."""
         self.select_page()
         n = len(self._filtered_cache)
-        if n > self.page_size():
-            # marcar folders filtrados en app para acciones masivas
-            self.app._bulk_filter_folders = [m.folder for m in self._filtered_cache]
-            if hasattr(self, "sel_count"):
-                self.sel_count.configure(
-                    text=f"{len(self.tree.selection())} vis. / {n} filtrados"
-                )
-        else:
-            self.app._bulk_filter_folders = [m.folder for m in self._filtered_cache]
+        self.app._bulk_filter_folders = [m.folder for m in self._filtered_cache]
+        vis = len(self.selected_many())
+        if hasattr(self, "sel_count"):
+            if self.is_full_view() or n <= self.page_size():
+                self.sel_count.configure(text=f"{vis} sel. / {n} filtrados")
+            else:
+                self.sel_count.configure(text=f"{vis} vis. / {n} filtrados")
 
     def clear_selection(self) -> None:
+        self._library_sel.clear()
         self.tree.selection_remove(self.tree.selection())
+        self.visual_pane.set_selection(set())
         self.app._bulk_filter_folders = None
         self._update_sel_count()
 
@@ -664,7 +1042,7 @@ class LibraryView(ctk.CTkFrame):
 
     def _update_sel_count(self) -> None:
         if hasattr(self, "sel_count"):
-            n = len(self.tree.selection())
+            n = len(self.selected_many())
             extra = getattr(self.app, "_bulk_filter_folders", None)
             if extra and len(extra) > n:
                 self.sel_count.configure(text=f"{n} vis. / {len(extra)} filtrados")
@@ -672,6 +1050,12 @@ class LibraryView(ctk.CTkFrame):
                 self.sel_count.configure(text=f"{n} sel.")
 
     def _on_tree_select(self, _evt=None) -> None:
+        sel = list(self.tree.selection())
+        self._library_sel.set_folders(sel)
+        if sel:
+            focus = self.tree.focus()
+            if focus:
+                self._library_sel.anchor = focus
         self._update_sel_count()
         self.on_select()
 
@@ -748,8 +1132,10 @@ class LibraryView(ctk.CTkFrame):
 
         struct_map = getattr(self.app, "_structure_by_folder", None) or {}
         srep = struct_map.get(m.folder)
-        st = compute_mod_status(m, structure_report=srep)
+        intel = (getattr(self.app, "mod_intel", None) or {}).get(m.folder)
+        st = compute_mod_status(m, structure_report=srep, intel=intel)
         conf_txt = m.conflicto if m.conflicto else "(sin conflicto reportado)"
+        prov_txt = intel.provenance_summary() if intel else "(intel Vortex no cargada)"
         staging_txt = self._staging_change_label(m)
         from ...core.game_status import lifecycle_for_mod
 
@@ -793,18 +1179,35 @@ class LibraryView(ctk.CTkFrame):
             struct_txt = (
                 "Estructura: (sin análisis aún — use Actualizar / Analizar plan)\n"
             )
-        self.detail_badges.configure(
+        from ...core.library_catalog_model import tags_for_mod
+
+        plan_txt = "Activo en plan (usar): SÍ" if m.usar else "Activo en plan (usar): NO"
+        disk_txt = "En destino juego: SÍ" if m.on_disk else "En destino juego: NO"
+        self.detail_state.configure(
             text=(
-                f"Juego: {game_name}\n"
-                f"Id carpeta: {m.folder}\n"
-                f"Ciclo UI: {life}\n"
-                f"Fuente: {src}\n"
-                f"{struct_txt}"
-                f"Flags: {status_badges_text(st)}\n"
-                f"Conflicto: {conf_txt}\n"
-                f"Staging local: {staging_txt}\n"
-                f"ZIP hash: {arch_hash_txt}\n"
-                f"(Plan ≠ destino ≠ ZIP ≠ WORK; análisis ≠ Apply)"
+                f"{plan_txt} · {disk_txt}\n"
+                f"Estado: {st.row_label}\n"
+                f"Etiquetas: {', '.join(tags_for_mod(m)) or '—'}\n"
+                f"Categoría: {m.category or '—'}\n"
+                f"Fuente datos: {src}\n"
+                f"Flags: {status_badges_text(st)}"
+            )
+        )
+        warn_lines = [conf_txt] if conf_txt and conf_txt != "(sin conflicto reportado)" else []
+        if srep is not None and srep.needs_manual_review:
+            warn_lines.append("Revisión de estructura recomendada.")
+        if srep is not None and srep.blocks_prepare:
+            warn_lines.append("Bloqueo de preparación / Apply.")
+        self.detail_warnings.configure(
+            text=("Advertencias: " + " · ".join(warn_lines)) if warn_lines else ""
+        )
+        self.detail_provenance.configure(
+            text=(
+                f"Procedencia\n{prov_txt}\n\n"
+                f"Paquete origen: "
+                f"{getattr(m, 'package_name', '') or getattr(m, 'package_folder', '') or '—'}\n"
+                f"Staging: {staging_txt}\n"
+                f"Juego: {game_name} · Id: {m.folder[:48]}{'…' if len(m.folder)>48 else ''}"
             )
         )
 
@@ -812,6 +1215,31 @@ class LibraryView(ctk.CTkFrame):
         self.detail_desc.delete("1.0", "end")
         self.detail_desc.insert("1.0", m.description or "(sin descripción)")
         self.detail_desc.configure(state="normal")  # scrollable editable view OK
+
+        plan_hint = ""
+        last_plan = getattr(self.app, "_last_plan", None)
+        if self.app.session:
+            from ...core.plan_diagnostics import diagnose_mod
+
+            diag = diagnose_mod(
+                m,
+                last_plan,
+                adapter_id=self.app.session.adapter_id,
+                mods_dest=self.app._ctx().mods,
+            )
+            plan_hint = (
+                f"\nPlan / simulación (mod en detalle):\n"
+                f"  Activo en loadout (usar): {'SÍ' if m.usar else 'NO'}\n"
+                f"  Archivos en plan deseado: {len(diag.planned_files)}\n"
+            )
+            for r in diag.reasons[:5]:
+                plan_hint += f"  ⚠ {r}\n"
+            if m.usar and not diag.planned_files and not diag.reasons:
+                plan_hint += "  ⚠ Sin archivos preparados — pulse «Simular plan».\n"
+            plan_hint += (
+                "  Simular plan = loadout · Simular selección = filas marcadas · "
+                "Simular este mod = solo esta fila.\n"
+            )
 
         files = self._affected_files(m)
         files_txt = "\n".join(f"  • {f}" for f in files[:20]) if files else "  (sin datos de plan)"
@@ -849,15 +1277,19 @@ class LibraryView(ctk.CTkFrame):
             "1.0",
             (
                 f"Prioridad: {prio}\n"
-                f"Variante: {m.pak_elegido or ('(elige 1)' if m.multi else '—')}\n"
+                f"Componentes: "
+                f"{', '.join(getattr(m, 'paks_elegidos', None) or ([m.pak_elegido] if m.pak_elegido else [])) or ('(elige)' if m.multi else '—')}\n"
+                f"Modo selección: {getattr(m, 'selection_mode', '') or '(auto)'}\n"
                 f"Multi: {'SI' if m.multi else 'NO'}  ·  Paks conocidos: {len(m.paks)}\n"
                 f"Tipo: {m.category or '(no disponible)'}\n"
-                f"Personaje: {', '.join(m.characters) or '(no disponible)'}\n"
+                f"Etiquetas motor: {', '.join(tags_for_mod(m)) or '(ninguna)'}\n"
+                f"{struct_txt}"
                 f"Autor: {author_txt}\n"
                 f"Tamaño: {size_txt}\n"
                 f"Ruta staging: {m.stage_path or '(no disponible)'}\n"
                 f"ZIP propio: {getattr(m, 'archive_path', '') or '(no disponible)'}\n"
                 f"Slots: {', '.join(m.slots) or '(no disponible)'}\n"
+                f"{plan_hint}"
                 f"{cls_txt}"
                 f"\nArchivos relevantes (plan / staging):\n{files_txt}"
             ),
@@ -866,6 +1298,8 @@ class LibraryView(ctk.CTkFrame):
         self.app.show_thumb_for(m, self.detail_image)
 
     def refresh(self) -> None:
+        if self.app.session:
+            self.apply_view_prefs_for_game(self.app.session.record.id)
         try:
             self._refresh_staging_labels()
         except Exception:

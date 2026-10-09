@@ -73,19 +73,28 @@ def prepare_windows_app() -> None:
             log_startup("SGM_TEST_SANDBOX ignorado en EXE congelado (modo diario)")
 
 
-def log_startup(message: str) -> None:
-    """Log local en datos de usuario (no consola)."""
+def _append_user_log(filename: str, message: str) -> None:
     try:
         from .paths import default_user_data_dir
 
         log_dir = default_user_data_dir() / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / "startup.log"
+        path = log_dir / filename
         line = f"{datetime.now().isoformat(timespec='seconds')} {message}\n"
         with path.open("a", encoding="utf-8") as f:
             f.write(line)
     except Exception:
         pass
+
+
+def log_startup(message: str) -> None:
+    """Log local en datos de usuario (no consola)."""
+    _append_user_log("startup.log", message)
+
+
+def log_ui(message: str) -> None:
+    """Eventos UI / miniaturas (errores de carga, reintentos)."""
+    _append_user_log("ui.log", message)
 
 
 def resolve_app_icon_paths() -> list[Path]:

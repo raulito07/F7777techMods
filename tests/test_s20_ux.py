@@ -177,7 +177,8 @@ class S20UxTests(unittest.TestCase):
         m.usar = False
         m.on_disk = True
         tag2, estado2 = app.view_library._row_tag(m)
-        self.assertEqual(tag2, "installed")
+        # S39: sin delta Apply → gris (unchanged); texto sigue diferenciando destino ON
+        self.assertIn(tag2, ("installed", "unchanged"))
         self.assertTrue("destino" in estado2.lower() or "ON" in estado2)
 
     def test_stale_analysis_blocks_apply(self):

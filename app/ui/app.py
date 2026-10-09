@@ -39,12 +39,23 @@ from PIL import Image
 from ..branding import PRODUCT_NAME, window_title
 from ..version import __version__
 from ..core.inventory import scan_staging, ModEntry
+from ..core.package_identity import expand_independent_packages
 from ..core.descriptions import apply_descriptions, save_override
 from ..core.conflicts import evaluate
 from ..core.loadout_store import merge_loadout, save_loadout, load_loadout
 from ..core.apply import plan_apply, execute, vortex_deploy_present, ApplyError
 from ..core.conflict_engine import semantic_enabled
-from ..core.thumbs import extract_vortex_meta, ensure_thumb, prefetch_thumbs, thumb_path_for
+from ..core.thumb_async import ThumbAsyncRuntime
+from ..core.thumbs import extract_vortex_meta, ensure_thumb, thumb_path_for
+from ..core.thumb_display import ThumbImageCache, thumb_display_size, log_thumb_error
+from ..core.plan_diagnostics import format_plan_mod_section, single_mod_detail_block
+from ..core.installed_state import enrich_installed_from_manifest
+from ..core.apply_confirm import (
+    format_apply_confirmation,
+    format_remove_confirmation,
+    plan_fingerprint,
+    plan_has_apply_work,
+)
 from ..core.vortex_sync import apply_vortex_enablement, disable_all
 from ..core.paths import ROOT, UI_SETTINGS_JSON, DATA
 from ..core.adapters import adapter_choices, adapter_id_from_choice, suggest_mods_dir
@@ -110,7 +121,13 @@ class ModManagerApp(ctk.CTk):
         self.mods: list[ModEntry] = []
         self.by_id: dict[str, ModEntry] = {}
         self.vortex_meta: dict = {}
+        self.mod_intel: dict = {}
         self._photo_ref = None
+        self._thumb_cache = ThumbImageCache()
+        self._thumb_async = ThumbAsyncRuntime(self, cache=self._thumb_cache)
+        self._thumb_async.start_polling()
+        self.protocol("WM_DELETE_WINDOW", self._on_window_close)
+        self._detail_image_widget = None
         self._last_plan = None
         self._analyze_gen = 0
         self._session_gen = 0
@@ -121,6 +138,9 @@ class ModManagerApp(ctk.CTk):
         self._nav_buttons: dict[str, ctk.CTkButton] = {}
         self._analysis_ready = False
         self._analysis_for_gen = -1
+        self._apply_sim_fingerprint: str | None = None
+        self._apply_sim_session_gen: int = -1
+        self._apply_sim_game_id: str = ""
         self.zoom = self._load_zoom()
         self.game_var = tk.StringVar(value="")
 
@@ -135,6 +155,16 @@ class ModManagerApp(ctk.CTk):
         self.show_view("summary")
         self._maybe_show_migration_notice()
         self.after(50, self._finish_startup_window)
+
+    def _on_window_close(self) -> None:
+        try:
+            self._thumb_async.shutdown()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
     def _finish_startup_window(self) -> None:
         """Muestra la ventana principal con icono correcto (una sola ventana)."""
@@ -166,12 +196,24 @@ class ModManagerApp(ctk.CTk):
 
     def _reload_session(self) -> None:
         self._session_gen += 1
+        self._thumb_async.set_session_gen(self._session_gen)
         gid = self.registry.active_game_id
         if gid and gid in self.registry.games:
             self.session = game_paths_for(self.registry.games[gid])
             ensure_game_data_dir(self.session)
         else:
             self.session = None
+        self._load_structure_resolutions()
+
+    def _load_structure_resolutions(self) -> None:
+        from ..core.structure_resolution import load_structure_resolutions
+
+        if not self.session:
+            self._structure_resolutions = {}
+            return
+        self._structure_resolutions = load_structure_resolutions(
+            self.session.structure_resolutions_json
+        )
 
     def _ctx(self):
         if not self.session:
@@ -358,7 +400,7 @@ class ModManagerApp(ctk.CTk):
         self.game_menu.pack(side="left", padx=(0, 8))
         ctk.CTkLabel(
             game_bar,
-            text="1 Actualizar → 2 Preparar plan → 3 Simular → 4 Aplicar",
+            text="1 Actualizar → 2 Plan → 3 Aplicar (Simular opcional)",
             text_color=COLORS["text_muted"],
             font=ctk.CTkFont(size=11),
         ).pack(side="left", padx=(4, 8))
@@ -367,15 +409,15 @@ class ModManagerApp(ctk.CTk):
         ).pack(side="left", padx=3)
         ctk.CTkButton(
             game_bar,
-            text="3·Simular",
-            width=90,
+            text="Simular (opc.)",
+            width=100,
             fg_color=COLORS["btn_secondary"],
             command=self.simulate,
         ).pack(side="left", padx=3)
         self.apply_btn = ctk.CTkButton(
             game_bar,
-            text="4·Aplicar",
-            width=90,
+            text="Aplicar cambios",
+            width=110,
             fg_color=COLORS["btn_apply"],
             command=self.apply_to_game,
             state="disabled",
@@ -431,6 +473,7 @@ class ModManagerApp(ctk.CTk):
 
         self.view_summary = SummaryView(self.content, self)
         self.view_library = LibraryView(self.content, self)
+        self.register_detail_image_widget(self.view_library.detail_image)
         self.view_conflicts = ConflictsView(self.content, self)
         self.view_installed = InstalledView(self.content, self)
         self.view_storage = StorageArchiveView(self.content, self)
@@ -448,6 +491,7 @@ class ModManagerApp(ctk.CTk):
         self._structure_by_folder: dict = {}
         self._structure_cache: dict = {}
         self._structure_blocks_apply: bool = False
+        self._structure_resolutions: dict = {}
         self._views = {
             "summary": self.view_summary,
             "library": self.view_library,
@@ -473,8 +517,28 @@ class ModManagerApp(ctk.CTk):
             self.view_library.apply_zoom(self.zoom / 100.0)
         self._sync_apply_button()
 
+    def _invalidate_apply_simulation(self) -> None:
+        self._apply_sim_fingerprint = None
+
+    def _capture_apply_simulation(self, plan) -> None:
+        if plan is None:
+            self._invalidate_apply_simulation()
+            return
+        self._apply_sim_fingerprint = plan_fingerprint(plan)
+        self._apply_sim_session_gen = self._session_gen
+        self._apply_sim_game_id = self.registry.active_game_id or ""
+
+    def _apply_simulation_current(self) -> bool:
+        if not self._apply_sim_fingerprint or not self._last_plan:
+            return False
+        if self._apply_sim_session_gen != self._session_gen:
+            return False
+        if self._apply_sim_game_id != (self.registry.active_game_id or ""):
+            return False
+        return self._apply_sim_fingerprint == plan_fingerprint(self._last_plan)
+
     def plan_is_applyable(self) -> bool:
-        """True solo con análisis vigente del juego actual y sin bloqueos."""
+        """True con análisis vigente y sin bloqueos. No exige pulsar Simular (S39)."""
         if not self.session or self.is_busy():
             return False
         # S10: sin destino verificado no hay Apply
@@ -490,6 +554,11 @@ class ModManagerApp(ctk.CTk):
         if plan.conflicts or plan.file_unresolved or plan.errors:
             return False
         if getattr(self, "_structure_blocks_apply", False):
+            return False
+        if not plan_has_apply_work(plan):
+            return False
+        # Huella debe coincidir con el último recálculo automático (no con Simular)
+        if not self._apply_simulation_current():
             return False
         try:
             if vortex_deploy_present(self._ctx()):
@@ -508,7 +577,7 @@ class ModManagerApp(ctk.CTk):
         elif self.is_busy():
             tip = "Operación en curso"
         elif not self._analysis_ready or self._analysis_for_gen != self._session_gen:
-            tip = "Analizando plan…"
+            tip = "Recalculando operaciones…"
         elif not bool(getattr(self.session.record, "destination_verified", False)):
             tip = "Destino no verificado — Apply bloqueado"
         elif self._last_plan and (
@@ -519,10 +588,14 @@ class ModManagerApp(ctk.CTk):
             tip = "Plan bloqueado — ver Conflictos"
         elif getattr(self, "_structure_blocks_apply", False):
             tip = "Estructura incompleta/ambigua — revisión manual"
+        elif self._last_plan and not plan_has_apply_work(self._last_plan):
+            tip = "Sin cambios en destino — nada que aplicar"
+        elif not self._apply_simulation_current():
+            tip = "Plan desactualizado — espere al recálculo"
         else:
-            tip = "Listo para aplicar" if ok else "No aplicable"
+            tip = "Listo para aplicar (confirmación obligatoria)" if ok else "No aplicable"
         try:
-            self.apply_btn.configure(text="Aplicar" if ok else "Aplicar (bloq.)")
+            self.apply_btn.configure(text="Aplicar cambios" if ok else "Aplicar (bloq.)")
         except Exception:
             pass
         self._apply_tip = tip
@@ -659,10 +732,13 @@ class ModManagerApp(ctk.CTk):
     def refresh(self) -> None:
         self._session_gen += 1
         gen = self._session_gen
+        self._thumb_async.set_session_gen(self._session_gen)
         self._analysis_ready = False
+        self._invalidate_apply_simulation()
         self._sync_apply_button()
         if not self.session:
             self.mods = []
+            self.mod_intel = {}
             self.by_id = {}
             self._update_footer()
             self.status.configure(text="Sin juego activo")
@@ -678,7 +754,9 @@ class ModManagerApp(ctk.CTk):
             meta_cache=self.session.meta_cache,
         )
         self.mods = scan_staging(self.session.stage_dir, deploy_path=ctx.deploy)
+        self.mods = expand_independent_packages(self.mods)
         merge_loadout(self.mods, self.session.loadout_json)
+        enrich_installed_from_manifest(self.mods, ctx)
         self._enrich_mod_sources()
         apply_descriptions(
             self.mods,
@@ -686,11 +764,12 @@ class ModManagerApp(ctk.CTk):
             overrides_path=self.session.desc_override,
         )
         for m in self.mods:
-            meta = self.vortex_meta.get(m.folder) or {}
+            pkg = getattr(m, "package_folder", "") or m.folder
+            meta = self.vortex_meta.get(pkg) or self.vortex_meta.get(m.folder) or {}
             if meta.get("pictureUrl"):
                 m.picture_url = meta["pictureUrl"]
             cand = thumb_path_for(
-                m.folder,
+                pkg,
                 meta.get("modId"),
                 meta.get("pictureUrl") or "",
                 thumbs_dir=self.session.thumbs_dir,
@@ -698,6 +777,7 @@ class ModManagerApp(ctk.CTk):
             if cand.exists():
                 m.thumb_path = str(cand)
         evaluate(self.mods, semantic=self._semantic())
+        self._refresh_mod_intel(ctx)
         self.by_id = {m.folder: m for m in self.mods}
         self._update_footer()
         self.view_library.refresh()
@@ -708,13 +788,27 @@ class ModManagerApp(ctk.CTk):
             for m in self.mods
             if (self.vortex_meta.get(m.folder) or {}).get("pictureUrl")
         ]
-        prefetch_thumbs(
+        self._thumb_async.prefetch_missing(
             self.vortex_meta,
             folders,
-            on_done=lambda: self.after(0, lambda: self._thumbs_ready(gen)),
             thumbs_dir=self.session.thumbs_dir,
+            on_done=lambda: self._thumbs_ready(gen),
         )
         self._update_status_bar()
+
+    def _refresh_mod_intel(self, ctx) -> None:
+        """S44 — capas Vortex/plan/destino (solo lectura; backup = histórico)."""
+        if not self.session:
+            self.mod_intel = {}
+            return
+        from ..core.vortex_mod_context import build_mod_intelligence_map
+
+        self.mod_intel = build_mod_intelligence_map(
+            self.mods,
+            game_id=self.session.vortex_game_id or "",
+            ctx=ctx,
+            adapter_id=str(getattr(self.session.record, "adapter", "") or ""),
+        )
 
     def _thumbs_ready(self, gen: int) -> None:
         if gen != self._session_gen or not self.session:
@@ -762,11 +856,17 @@ class ModManagerApp(ctk.CTk):
                 analyze_library_structures,
                 structure_blocks_apply,
             )
+            from ..core.structure_resolution import (
+                apply_resolution_to_mod,
+                load_structure_resolutions,
+                resolution_valid,
+            )
 
-            try:
-                plan = plan_apply(mods_snapshot, ctx, settings)
-            except Exception:
-                plan = None
+            res_path = (
+                self.session.structure_resolutions_json if self.session else None
+            )
+            resolutions = load_structure_resolutions(res_path)
+            structures: dict = {}
             try:
                 structures = analyze_library_structures(
                     mods_snapshot,
@@ -774,9 +874,22 @@ class ModManagerApp(ctk.CTk):
                     cache=struct_cache,
                     only_usar=False,
                 )
-                blocks = structure_blocks_apply(structures, mods_snapshot)
+                for m in mods_snapshot:
+                    r = resolutions.get(m.folder)
+                    rep = structures.get(m.folder)
+                    if r and rep and resolution_valid(rep, r):
+                        apply_resolution_to_mod(m, r)
             except Exception:
                 structures = {}
+            try:
+                plan = plan_apply(mods_snapshot, ctx, settings)
+            except Exception:
+                plan = None
+            try:
+                blocks = structure_blocks_apply(
+                    structures, mods_snapshot, resolutions
+                )
+            except Exception:
                 blocks = False
 
             def done():
@@ -793,7 +906,13 @@ class ModManagerApp(ctk.CTk):
                 self._analysis_ready = plan is not None
                 self._analysis_for_gen = session_gen
                 self._structure_by_folder = structures
+                self._structure_resolutions = resolutions
                 self._structure_blocks_apply = bool(blocks)
+                # S39: recálculo automático = simulación interna vigente (Simular es opcional)
+                if plan is not None:
+                    self._capture_apply_simulation(plan)
+                else:
+                    self._invalidate_apply_simulation()
                 self._merge_file_conflict_labels()
                 self._merge_structure_labels()
                 # Solo repintar biblioteca (no resetear página/filtros de más)
@@ -813,10 +932,13 @@ class ModManagerApp(ctk.CTk):
 
     def _merge_structure_labels(self) -> None:
         """Anota bloqueos de estructura en la etiqueta de conflicto (solo UI/plan)."""
+        from ..core.structure_resolution import effective_blocks_prepare
+
         reports = getattr(self, "_structure_by_folder", None) or {}
+        resolutions = getattr(self, "_structure_resolutions", None) or {}
         for m in self.mods:
             r = reports.get(m.folder)
-            if not r or not r.blocks_prepare:
+            if not r or not effective_blocks_prepare(r, resolutions.get(m.folder)):
                 continue
             tag = f"ESTRUCTURA:{r.classification}"
             if tag not in (m.conflicto or ""):
@@ -877,9 +999,36 @@ class ModManagerApp(ctk.CTk):
         )
 
     # ---------- thumbs ----------
+    def register_detail_image_widget(self, label_widget) -> None:
+        self._detail_image_widget = label_widget
+        try:
+            label_widget.bind("<Button-1>", lambda _e: self.retry_detail_image(), add="+")
+        except Exception:
+            pass
+
+    def _thumb_label_alive(self, label_widget) -> bool:
+        try:
+            return bool(label_widget.winfo_exists())
+        except Exception:
+            return False
+
+    def retry_detail_image(self) -> None:
+        m = self.selected()
+        if not m or not self.view_library:
+            return
+        w = self.view_library.detail_image
+        path = getattr(w, "_sgm_thumb_path", None) or m.thumb_path
+        if path and Path(path).exists():
+            log_thumb_error(f"reintento carga {path}")
+            self._paint_thumb(str(path), w, mod_folder=m.folder)
+            return
+        self.show_thumb_for(m, w)
+
     def show_thumb_for(self, m: ModEntry, label_widget) -> None:
         if not self.session:
             return
+        if label_widget is self.view_library.detail_image:
+            self._detail_image_widget = label_widget
         meta = self.vortex_meta.get(m.folder) or {}
         path = m.thumb_path
         if (not path or not Path(path).exists()) and meta.get("pictureUrl"):
@@ -895,6 +1044,7 @@ class ModManagerApp(ctk.CTk):
             else:
                 folder = m.folder
                 session_gen = self._session_gen
+                target = label_widget
 
                 def worker():
                     got = ensure_thumb(folder, meta, thumbs_dir=self.session.thumbs_dir)
@@ -904,32 +1054,54 @@ class ModManagerApp(ctk.CTk):
                     def apply():
                         if session_gen != self._session_gen:
                             return
+                        if not self._thumb_label_alive(target):
+                            return
+                        if target is not self.view_library.detail_image:
+                            return
                         sel = self.view_library.selected()
                         if sel and sel.folder == folder:
                             sel.thumb_path = str(got)
-                            self._paint_thumb(str(got), label_widget)
+                            self._paint_thumb(str(got), target, mod_folder=folder)
 
                     self.after(0, apply)
 
                 threading.Thread(target=worker, daemon=True).start()
         if path and Path(path).exists():
-            self._paint_thumb(path, label_widget)
+            self._paint_thumb(path, label_widget, mod_folder=m.folder)
+            return
+        self._set_thumb_placeholder(label_widget, path=None, mod_folder=m.folder)
+
+    def _set_thumb_placeholder(
+        self, label_widget, *, path: str | None, mod_folder: str | None
+    ) -> None:
+        if not self._thumb_label_alive(label_widget):
             return
         self._photo_ref = None
-        label_widget.configure(image=None, text="(sin imagen Nexus/Vortex)")
-
-    def _paint_thumb(self, path: str, label_widget) -> None:
-        try:
-            scale = self.zoom / 100.0
-            w = int(300 * min(max(scale, 0.9), 1.4))
-            h = int(160 * min(max(scale, 0.9), 1.4))
-            img = Image.open(path)
-            img.thumbnail((w, h))
-            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
-            self._photo_ref = ctk_img
-            label_widget.configure(image=ctk_img, text="")
-        except Exception:
+        label_widget._sgm_thumb_ref = None  # type: ignore[attr-defined]
+        label_widget._sgm_thumb_path = path  # type: ignore[attr-defined]
+        label_widget._sgm_thumb_folder = mod_folder  # type: ignore[attr-defined]
+        if path:
+            label_widget.configure(
+                image=None,
+                text="(error imagen — clic para reintentar)",
+            )
+        else:
             label_widget.configure(image=None, text="(sin imagen Nexus/Vortex)")
+
+    def _paint_thumb(self, path: str, label_widget, *, mod_folder: str | None = None) -> None:
+        if not self._thumb_label_alive(label_widget):
+            return
+        try:
+            w, h = thumb_display_size(self.zoom)
+            ctk_img = self._thumb_cache.get_ctk_image(path, w, h)
+            self._photo_ref = ctk_img
+            label_widget._sgm_thumb_ref = ctk_img  # type: ignore[attr-defined]
+            label_widget._sgm_thumb_path = path  # type: ignore[attr-defined]
+            label_widget._sgm_thumb_folder = mod_folder  # type: ignore[attr-defined]
+            label_widget.configure(image=ctk_img, text="")
+        except Exception as exc:
+            log_thumb_error(f"fallo pintar {path}", exc=exc)
+            self._set_thumb_placeholder(label_widget, path=path, mod_folder=mod_folder)
 
     # ---------- library actions ----------
     def selected(self) -> ModEntry | None:
@@ -947,6 +1119,7 @@ class ModManagerApp(ctk.CTk):
         if m.usar and m.multi and not m.pak_elegido:
             self.choose_pak()
         self._isolated_plan_folders = None
+        self._invalidate_apply_simulation()
         self.view_library.redraw()
         self.view_summary.refresh()
         # Reanalizar (invalidará Aplicar hasta completar)
@@ -972,6 +1145,7 @@ class ModManagerApp(ctk.CTk):
                 pending_var += 1
         self._bulk_filter_folders = None
         self._isolated_plan_folders = None
+        self._invalidate_apply_simulation()
         self.view_library.redraw()
         self.view_summary.refresh()
         self.analyze_conflicts()
@@ -995,12 +1169,14 @@ class ModManagerApp(ctk.CTk):
             m.usar = False
         self._bulk_filter_folders = None
         self._isolated_plan_folders = None
+        self._invalidate_apply_simulation()
         self.view_library.redraw()
         self.view_summary.refresh()
         self.analyze_conflicts()
         messagebox.showinfo(
             "Plan actualizado",
             f"Desactivados en plan: {len(mods)}.\n"
+            "No se ha retirado nada del juego.\n"
             "No se ha escrito nada en el juego hasta Aplicar.",
         )
 
@@ -1014,7 +1190,6 @@ class ModManagerApp(ctk.CTk):
             return
         # Activar temporalmente solo estos en el snapshot de simulación
         folders = {m.folder for m in mods}
-        self._isolated_plan_folders = list(folders)
         self._busy_plan = True
         self.progress.show("Simulando selección…", determinate=False)
         # snapshot: usar=True solo para selección
@@ -1053,13 +1228,19 @@ class ModManagerApp(ctk.CTk):
                 body = self._format_plan_preview(
                     plan,
                     ctx,
+                    mods=snap,
+                    only_folders=folders,
+                    scope_label=(
+                        f"Simular selección — {len(folders)} mod(s) marcados "
+                        "(ignora «usar» de otros mods; NO cambia el plan guardado)"
+                    ),
                     title=(
-                        f"SIMULACIÓN AISLADA — {len(folders)} mod(s) seleccionados\n"
-                        "No se ha modificado el loadout ni el disco.\n"
-                        "Apply usa el plan de mods con «usar» activo, no este aislamiento."
+                        "SIMULAR SELECCIÓN (vista aislada)\n"
+                        "El loadout real no se ha modificado.\n"
+                        "Para el plan global use «3·Simular» / Simular en Resumen."
                     ),
                 )
-                show_scroll_text(self, title="Simulación (selección)", body=body)
+                show_scroll_text(self, title="Simular selección", body=body)
                 self._update_status_bar()
 
             self.after(0, done)
@@ -1067,59 +1248,235 @@ class ModManagerApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def choose_pak(self) -> None:
+        """Seleccionar componentes .pak: independientes (check) o excluyentes (radio)."""
         m = self.selected()
         if not m:
             return
         if not m.paks:
             messagebox.showinfo("Sin paks", "Este mod no tiene archivos .pak.")
             return
+        from ..core.component_selection import (
+            INDEPENDIENTES,
+            REVISION_MANUAL,
+            VARIANTES_EXCLUYENTES,
+            classify_components,
+            selected_paks,
+            set_selected_paks,
+        )
+
+        rep = classify_components(m)
+        m.selection_mode = rep.mode
         dest_hint = "Paks/~mods (nombre del .pak)"
-        if self.session and self.session.adapter_id == "ue4_paks_mods":
-            dest_hint = str(self.session.mods_dir) if hasattr(self.session, "mods_dir") else dest_hint
+        if self.session and hasattr(self.session, "mods_dir"):
+            dest_hint = str(self.session.mods_dir)
+        exclusive = rep.mode == VARIANTES_EXCLUYENTES
         win = ctk.CTkToplevel(self)
-        win.title(f"Variante — {m.name}")
-        win.geometry("560x420")
+        win.title(f"Componentes — {m.name}")
+        win.geometry("640x520")
+        win.minsize(480, 360)
         win.grab_set()
+        title = {
+            VARIANTES_EXCLUYENTES: "Elige UNA variante excluyente",
+            INDEPENDIENTES: "Selecciona uno o varios componentes independientes",
+            REVISION_MANUAL: "REVISIÓN MANUAL — marca qué instalar (sin exclusión forzada)",
+        }.get(rep.mode, "Selecciona componentes")
+        ctk.CTkLabel(win, text=title, font=ctk.CTkFont(weight="bold")).pack(
+            pady=(12, 2), padx=12
+        )
         ctk.CTkLabel(
             win,
-            text="Elige UNA variante .pak (no se selecciona automáticamente)",
-            font=ctk.CTkFont(weight="bold"),
-        ).pack(pady=(12, 4))
-        ctk.CTkLabel(
-            win,
-            text=f"Destino final: {dest_hint}\n{m.description[:160] if m.description else '(sin descripción)'}",
+            text=(
+                f"Modo: {rep.mode} · certeza: {rep.certainty.value}\n"
+                f"{rep.explanation}\n"
+                f"Destino: {dest_hint}"
+            ),
             text_color=COLORS["text_muted"],
-            wraplength=520,
+            wraplength=600,
             justify="left",
         ).pack(padx=16, pady=4)
-        var = tk.StringVar(value=m.pak_elegido or "")
-        box = ctk.CTkScrollableFrame(win, height=220)
-        box.pack(fill="both", expand=True, padx=16)
-        for p in m.paks:
-            ctk.CTkRadioButton(
-                box,
-                text=f"{p}  →  destino: {p}",
-                variable=var,
-                value=p,
-            ).pack(anchor="w", pady=3)
-        if not m.pak_elegido:
+        if rep.evidence:
             ctk.CTkLabel(
                 win,
-                text="Sin elección: el mod permanece bloqueado para instalar.",
-                text_color=COLORS["warn"],
-            ).pack(pady=4)
+                text="Evidencia: " + "; ".join(rep.evidence[:4]),
+                text_color=COLORS["text_muted"],
+                wraplength=600,
+                justify="left",
+            ).pack(padx=16, pady=2)
+
+        box = ctk.CTkScrollableFrame(win, height=260)
+        box.pack(fill="both", expand=True, padx=16, pady=4)
+        current = set(x.lower() for x in selected_paks(m))
+        radio_var = tk.StringVar(value=m.pak_elegido or "")
+        check_vars: dict[str, tk.BooleanVar] = {}
+
+        for c in rep.components:
+            p = c.filename
+            line = f"{p}  · grupo: {c.group}  →  destino: {c.dest_rel}"
+            if exclusive:
+                ctk.CTkRadioButton(box, text=line, variable=radio_var, value=p).pack(
+                    anchor="w", pady=3, padx=4
+                )
+            else:
+                bv = tk.BooleanVar(value=p.lower() in current)
+                check_vars[p] = bv
+                ctk.CTkCheckBox(box, text=line, variable=bv).pack(
+                    anchor="w", pady=3, padx=4
+                )
+
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=10)
+
+        def cancel():
+            win.destroy()
 
         def ok():
-            if not var.get():
-                messagebox.showinfo("Variante", "Debes elegir una variante.", parent=win)
-                return
-            m.pak_elegido = var.get()
+            if exclusive:
+                if not radio_var.get():
+                    messagebox.showinfo(
+                        "Variante", "Debes elegir exactamente una variante.", parent=win
+                    )
+                    return
+                set_selected_paks(m, [radio_var.get()], exclusive=True)
+            else:
+                picks = [p for p, bv in check_vars.items() if bv.get()]
+                if not picks:
+                    messagebox.showinfo(
+                        "Componentes",
+                        "Selecciona al menos un componente, o cancela.",
+                        parent=win,
+                    )
+                    return
+                set_selected_paks(m, picks, exclusive=False)
             m.usar = True
+            m.selection_mode = rep.mode
+            if self.session:
+                save_loadout(self.mods, self.session.loadout_json)
+            self._invalidate_apply_simulation()
             win.destroy()
             self.view_library.refresh()
             self.analyze_conflicts()
 
-        ctk.CTkButton(win, text="Usar esta variante", command=ok).pack(pady=12)
+        ctk.CTkButton(btn_row, text="Cancelar", width=120, command=cancel).pack(
+            side="left", padx=4
+        )
+        ctk.CTkButton(
+            btn_row,
+            text="Confirmar selección",
+            width=180,
+            fg_color=COLORS["btn_apply"],
+            command=ok,
+        ).pack(side="right", padx=4)
+
+    def review_structure(self) -> None:
+        """S40 — revisión manual de estructura con causa, archivos y resolución persistente."""
+        if not self.session:
+            return
+        m = self.selected()
+        if not m:
+            messagebox.showinfo("Estructura", "Selecciona un mod en Biblioteca.")
+            return
+        from ..core.mod_structure import analyze_mod_structure
+        from ..core.structure_resolution import (
+            ACK_UNSUPPORTED,
+            CHOOSE_VARIANT,
+            CONFIRM_SIMPLE,
+            INSTALL_ALL_COMPOUND,
+            StructureResolution,
+            format_review_body,
+            list_structure_files,
+            save_structure_resolutions,
+            structure_procedure,
+        )
+
+        adapter_id = str(getattr(self.session.record, "adapter", "") or "generic_folder")
+        report = analyze_mod_structure(m, adapter_id)
+        res = self._structure_resolutions.get(m.folder)
+        body = format_review_body(
+            m, report, res, file_list=list_structure_files(m)
+        )
+        show_scroll_text(self, title="Revisar estructura", body=body)
+
+        win = ctk.CTkToplevel(self)
+        win.title("Resolver estructura")
+        win.geometry("520x200")
+        win.grab_set()
+        ctk.CTkLabel(
+            win,
+            text=structure_procedure(report),
+            wraplength=480,
+            justify="left",
+        ).pack(padx=12, pady=10)
+
+        def _save(action: str, **kw) -> None:
+            sr = StructureResolution(
+                folder=m.folder,
+                fingerprint=report.fingerprint,
+                action=action,
+                pak_choice=str(kw.get("pak_choice") or ""),
+                paks_all=list(kw.get("paks_all") or []),
+                note=str(kw.get("note") or ""),
+            )
+            self._structure_resolutions[m.folder] = sr
+            save_structure_resolutions(
+                self.session.structure_resolutions_json,
+                self._structure_resolutions,
+            )
+            if action == CHOOSE_VARIANT and sr.pak_choice:
+                from ..core.component_selection import set_selected_paks
+
+                set_selected_paks(m, [sr.pak_choice], exclusive=True)
+            elif action == INSTALL_ALL_COMPOUND and sr.paks_all:
+                from ..core.component_selection import set_selected_paks
+
+                set_selected_paks(m, sr.paks_all, exclusive=False)
+            if self.session:
+                save_loadout(self.mods, self.session.loadout_json)
+            win.destroy()
+            self._invalidate_apply_simulation()
+            self.analyze_conflicts()
+            self.view_library.on_select()
+
+        btn = ctk.CTkFrame(win, fg_color="transparent")
+        btn.pack(fill="x", padx=12, pady=8)
+        if report.classification == "FORMATO_NO_PAK" or (
+            not report.installable and report.classification == "SIN_ARCHIVOS_INSTALABLES"
+        ):
+            ctk.CTkButton(
+                btn,
+                text="Reconocer: no desplegable aquí",
+                command=lambda: _save(
+                    ACK_UNSUPPORTED,
+                    note="Usuario reconoce formato no PAK / sin destino ~mods",
+                ),
+            ).pack(fill="x", pady=3)
+        elif report.classification == "CON_VARIANTES" and m.paks:
+            for p in m.paks[:12]:
+                ctk.CTkButton(
+                    btn,
+                    text=f"Elegir variante: {p}",
+                    command=lambda pk=p: _save(
+                        CHOOSE_VARIANT, pak_choice=pk, note=f"variante {pk}"
+                    ),
+                ).pack(fill="x", pady=2)
+        elif len(report.installable) > 1 or (m.paks and len(m.paks) > 1):
+            ctk.CTkButton(
+                btn,
+                text="Instalar todos los componentes listados",
+                command=lambda: _save(
+                    INSTALL_ALL_COMPOUND,
+                    paks_all=list(m.paks or report.installable),
+                    note="compuesto confirmado",
+                ),
+            ).pack(fill="x", pady=3)
+        if report.classification == "SIMPLE" or report.installable:
+            ctk.CTkButton(
+                btn,
+                text="Confirmar estructura simple",
+                command=lambda: _save(CONFIRM_SIMPLE, note="estructura simple"),
+            ).pack(fill="x", pady=3)
+        ctk.CTkButton(btn, text="Cerrar sin guardar", command=win.destroy).pack(
+            fill="x", pady=6
+        )
 
     def edit_description(self) -> None:
         if not self.session:
@@ -1139,47 +1496,45 @@ class ModManagerApp(ctk.CTk):
         self.view_library.refresh()
 
     def simulate_selected_preview(self) -> None:
-        """Vista previa de qué copiaría el mod seleccionado (sin Apply)."""
-        if not self.session:
-            messagebox.showerror("Sin juego", "Configura un juego activo primero.")
+        """Simula solo el mod de la fila seleccionada (no altera «usar» del loadout)."""
+        if not self.session or self.is_busy():
             return
         m = self.selected()
         if not m:
             messagebox.showinfo("Selección", "Selecciona un mod en la biblioteca.")
             return
-        from ..core.content_classify import classify_mod
+        from copy import copy
 
-        mc = classify_mod(m, self.session.adapter_id)
-        lines = [
-            f"=== Vista previa — {m.name} ===",
-            f"Adaptador: {self.session.adapter_id}",
-            f"Clasificación: {mc.summary_kind()}",
-            f"Variante: {m.pak_elegido or ('(pendiente)' if m.multi else '—')}",
-            "",
-            "Instalables (se copiarían si el mod está activo y sin bloqueos):",
-        ]
-        for x in mc.installable or ["(ninguno)"]:
-            lines.append(f"  → {x}")
-        lines.append("")
-        lines.append("Documentación excluida:")
-        for x in mc.documentation[:30] or ["(ninguna)"]:
-            lines.append(f"  · {x}")
-        if mc.special:
-            lines.append("")
-            lines.append("Destino especial (no → ~mods):")
-            for x in mc.special:
-                lines.append(f"  ! {x}")
-        if mc.unknown:
-            lines.append("")
-            lines.append("Pendiente de clasificación:")
-            for x in mc.unknown:
-                lines.append(f"  ? {x}")
-        if mc.variant_pending:
-            lines.append("")
-            lines.append("BLOQUEO: elige variante antes de instalar.")
-        lines.append("")
-        lines.append("Apply NO ejecutado.")
-        show_scroll_text(self, title="Vista previa instalación", body="\n".join(lines))
+        snap = []
+        for om in self.mods:
+            cm = copy(om)
+            cm.usar = om.folder == m.folder
+            snap.append(cm)
+        ctx = self._ctx()
+        settings = self._settings()
+        sel_folder = m.folder
+        try:
+            evaluate(snap, semantic=self._semantic())
+            plan = plan_apply(snap, ctx, settings)
+        except Exception as e:
+            show_scroll_text(self, title="Simular este mod", body=str(e), kind="error")
+            return
+        intro = single_mod_detail_block(
+            m,
+            self._last_plan,
+            adapter_id=self.session.adapter_id,
+            mods_dest=ctx.mods,
+            selected_folder=sel_folder,
+        )
+        body = intro + "\n" + self._format_plan_preview(
+            plan,
+            ctx,
+            mods=snap,
+            only_folders={m.folder},
+            scope_label=f"Simular este mod — solo [{m.folder}] (aislado del plan global)",
+            title="SIMULAR ESTE MOD (aislado)\nNo cambia qué mods están activos en el plan.",
+        )
+        show_scroll_text(self, title="Simular este mod", body=body)
 
     def show_remake_trial_guide(self) -> None:
         """Guía S30: prueba con mods reales Remake — solo SIMULAR, sin Apply."""
@@ -1327,6 +1682,7 @@ class ModManagerApp(ctk.CTk):
             meta_cache=self.session.meta_cache,
         )
         self.mods = scan_staging(self.session.stage_dir, deploy_path=ctx.deploy)
+        self.mods = expand_independent_packages(self.mods)
         merge_loadout(self.mods, self.session.loadout_json)
         self._enrich_mod_sources()
         apply_descriptions(
@@ -1384,7 +1740,16 @@ class ModManagerApp(ctk.CTk):
         self.analyze_conflicts()
 
     # ---------- plan preview / apply ----------
-    def _format_plan_preview(self, plan, ctx, *, title: str) -> str:
+    def _format_plan_preview(
+        self,
+        plan,
+        ctx,
+        *,
+        title: str,
+        mods: list[ModEntry] | None = None,
+        scope_label: str = "Plan completo (todos los mods con «usar» activo)",
+        only_folders: set[str] | None = None,
+    ) -> str:
         resolved = 0
         if plan.analysis:
             resolved = sum(1 for c in plan.analysis.file_conflicts if c.resolved)
@@ -1431,13 +1796,25 @@ class ModManagerApp(ctk.CTk):
                 f"({_fmt_bytes_ui(int(d.get('size') or 0))}) — {d.get('reason', '')}"
             )
 
+        mod_src = mods if mods is not None else self.mods
+        settings = plan.settings or self._settings()
+        mod_section = format_plan_mod_section(
+            mod_src,
+            plan,
+            ctx,
+            settings,
+            scope_label=scope_label,
+            only_folders=only_folders,
+        )
         msg = (
             f"{title}\n"
             f"Juego: {self.session.record.name}\n"
             f"Destino: {ctx.mods}\n"
-            f"Activos en plan: {sum(1 for m in self.mods if m.usar)}\n"
+            f"Activos en plan (global): {sum(1 for m in self.mods if m.usar)}\n"
             f"Conflictos bloqueantes: {plan.conflicts}\n"
             f"Sin resolver: {plan.file_unresolved}  ·  Resueltos: {resolved}\n\n"
+            + mod_section
+            + "\n"
             + "\n".join(method_lines)
             + "\n\n"
             + _list("AÑADIR", plan.to_add)
@@ -1491,14 +1868,23 @@ class ModManagerApp(ctk.CTk):
                     show_scroll_text(self, title="Simulación", body=str(err), kind="error")
                     return
                 self._last_plan = plan
+                self._capture_apply_simulation(plan)
                 self._merge_file_conflict_labels()
+                self._sync_apply_button()
                 self.view_library.refresh()
                 self.view_summary.refresh()
                 show_scroll_text(
                     self,
-                    title="Simulación (sin cambios en disco)",
+                    title="Simular plan",
                     body=self._format_plan_preview(
-                        plan, ctx, title="VISTA PREVIA — no se ha escrito nada"
+                        plan,
+                        ctx,
+                        mods=mods_snapshot,
+                        scope_label="Simular plan — todos los mods con «usar» activo en loadout",
+                        title=(
+                            "SIMULAR PLAN (loadout completo)\n"
+                            "Vista previa — no se ha escrito nada en disco."
+                        ),
                     ),
                 )
 
@@ -1563,8 +1949,10 @@ class ModManagerApp(ctk.CTk):
                     show_scroll_text(self, title="Error", body=str(err), kind="error")
                     return
                 self._last_plan = plan
+                self._capture_apply_simulation(plan)
                 self._merge_file_conflict_labels()
                 self.view_library.refresh()
+                self._sync_apply_button()
                 if plan.conflicts or plan.errors or plan.file_unresolved:
                     show_scroll_text(
                         self,
@@ -1575,23 +1963,68 @@ class ModManagerApp(ctk.CTk):
                         kind="error",
                     )
                     return
-                summary = self._format_plan_preview(
-                    plan,
-                    ctx,
-                    title="CONFIRMACIÓN — se escribirá en el destino del juego",
-                )
-                summary += (
-                    "\n\nSolo se eliminan archivos GESTIONADOS.\n"
-                    "Se creará backup + snapshot de manifiesto."
-                )
+                if getattr(self, "_structure_blocks_apply", False):
+                    messagebox.showwarning(
+                        "Estructura",
+                        "Hay bloqueos de estructura/grupos incompletos. Revise Biblioteca.",
+                    )
+                    return
+                if not plan_has_apply_work(plan):
+                    messagebox.showinfo(
+                        "Sin cambios",
+                        "No hay AÑADIR, ACTUALIZAR ni RETIRAR. No se ejecuta transacción.\n"
+                        "Desactivar en plan no retira archivos del juego.",
+                    )
+                    return
+                confirmed_fp = plan_fingerprint(plan)
+                summary = format_apply_confirmation(plan, ctx)
+                summary += "\n\nSe creará backup + snapshot de manifiesto (rollback)."
                 if not ask_scroll_confirm(
                     self,
-                    title="Confirmar aplicación",
+                    title="Confirmar aplicación de cambios",
                     body=summary,
-                    confirm_label="Aplicar ahora",
+                    confirm_label="Aplicar cambios al juego",
                 ):
                     return
-                self._execute_apply(plan, ctx)
+                if plan.to_remove:
+                    if not ask_scroll_confirm(
+                        self,
+                        title="Confirmar RETIRADA física",
+                        body=format_remove_confirmation(plan),
+                        confirm_label="Sí, retirar archivos",
+                    ):
+                        return
+                # Revalidar tras confirmación: plan caducado → cancelar
+                try:
+                    evaluate(list(self.mods), semantic=self._semantic())
+                    plan2 = plan_apply(list(self.mods), ctx, self._settings())
+                except Exception as e2:
+                    show_scroll_text(
+                        self, title="Revalidación fallida", body=str(e2), kind="error"
+                    )
+                    return
+                if plan_fingerprint(plan2) != confirmed_fp:
+                    messagebox.showinfo(
+                        "Plan caducado",
+                        "El plan cambió entre el cálculo y la confirmación.\n"
+                        "Revise Biblioteca y vuelva a Aplicar.",
+                    )
+                    self._last_plan = plan2
+                    self._capture_apply_simulation(plan2)
+                    self._sync_apply_button()
+                    self.view_library.refresh()
+                    return
+                if plan2.conflicts or plan2.errors or plan2.file_unresolved:
+                    show_scroll_text(
+                        self,
+                        title="Bloqueo tras confirmación",
+                        body=self._format_plan_preview(
+                            plan2, ctx, title="PLAN BLOQUEADO — no se ha escrito nada"
+                        ),
+                        kind="error",
+                    )
+                    return
+                self._execute_apply(plan2, ctx)
 
             self.after(0, done)
 

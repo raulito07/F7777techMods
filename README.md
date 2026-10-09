@@ -17,20 +17,31 @@ Aplicación **independiente**; no afiliada a Square Enix, Steam, Nexus Mods ni V
 ## Funcionalidades
 
 - Selector multijuego y datos aislados por perfil
-- Inventario desde staging Vortex (lectura) y/o biblioteca de trabajo
-- Plan, prioridades, conflictos y detección de estructura
-- **Simular** antes de escribir; **Apply** con validaciones del motor
+- **Biblioteca universal** del catálogo local: vistas **TABLA**, **CATÁLOGO** y **LISTA VISUAL**, con lista completa paginada y miniaturas asíncronas
+- Selección por **componentes independientes** (packs con varias piezas opcionales)
+- Inventario desde staging **Vortex (solo lectura)** y/o biblioteca de trabajo; sin Deploy/Purge automático
+- Plan, prioridades, **conflictos**, fusión de manifiesto y detección de estructura
+- **Simulación opcional** antes de escribir; **Apply** con confirmación y validaciones del motor (destino, deployment ajeno, estructura ambigua)
 - Modos **COPY / HARDLINK / AUTO**
-- Manifiesto, backups y recuperación
+- Manifiesto, backups, estado instalado y recuperación
 - Archivado ZIP propio y ciclo **WORK_LIBRARY**
+- Identidad de paquetes y contexto de mods importados desde Vortex (modelo de lectura, no sustituye a Vortex)
+
+> La interfaz y el motor están pensados para ampliarse a más juegos, pero los **adaptadores de instalación disponibles siguen siendo limitados** (ver tabla de compatibilidad). No es soporte universal de instalación.
 
 ## Compatibilidad (0.1.0 Beta)
 
-| Juego | Estado |
-|-------|--------|
-| **FINAL FANTASY VII REMAKE** | Instalación controlada de un mod real en desarrollo; **validación visual in-game pendiente**. |
-| **FINAL FANTASY VII REBIRTH** | Inventario y simulaciones; **despliegue real pendiente**. |
-| **Stellar Blade** | Inventario y simulaciones; **despliegue real pendiente**. |
+Estado **validado por juego** (tests automatizados + pruebas locales; no implica certificación del editor):
+
+| Juego | Inventario / biblioteca | Plan / conflictos | Apply real | Notas |
+|-------|-------------------------|-------------------|------------|-------|
+| **FINAL FANTASY VII REMAKE** | Sí | Sí | Parcial | Mod real en desarrollo; **validación visual in-game pendiente**. |
+| **FINAL FANTASY VII REBIRTH** | Sí | Sí | No | **Despliegue real pendiente**. |
+| **Stellar Blade** | Sí | Sí | No | **Despliegue real pendiente**. |
+
+### EMOV y multidestino (experimental)
+
+Rutas **EMOV** (estructuras especiales en staging) y despliegue **multidestino** tienen cobertura de tests, pero el comportamiento en mods reales puede variar. Tratar como **soporte experimental**: revisar simulación, manifiesto y backups antes de Apply.
 
 ## Uso
 
@@ -44,7 +55,7 @@ Datos: `%LOCALAPPDATA%\FourSevenTech\F7777techMods\` · Override: `SGM_DATA_DIR`
 | Canal | Entrada | Notas |
 |-------|---------|--------|
 | **Diario (recomendado bajo WDAC)** | `pythonw` firmado + VBS | [docs/DISTRIBUCION.md](docs/DISTRIBUCION.md) · [docs/DESARROLLO.md](docs/DESARROLLO.md) |
-| **Portable GitHub** | `F7777techMods.exe` (PyInstaller, sin firma) | ZIP `v0.1.0-beta`; puede bloquearse por políticas Windows |
+| **Portable GitHub** | `F7777techMods.exe` (PyInstaller, sin firma) | Release **v0.1.0-beta** existente; el código fuente puede ir por delante de un ZIP instalable |
 
 ## Documentación
 

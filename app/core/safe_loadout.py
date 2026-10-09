@@ -83,8 +83,10 @@ def propose_safe_subset(
 
     for m in pool:
         mc = classify_mod(m, adapter_id)
-        if mc.variant_pending or (m.multi and not m.pak_elegido and m.usar):
-            prop.excluded.append(_exclude(m.folder, m.name, "variante pendiente"))
+        from .component_selection import selection_pending
+
+        if mc.variant_pending or selection_pending(m):
+            prop.excluded.append(_exclude(m.folder, m.name, "componentes pendientes"))
             continue
         if not mc.has_installable:
             reason = "sin instalables"

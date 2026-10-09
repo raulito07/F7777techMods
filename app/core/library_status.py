@@ -30,7 +30,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from typing import TYPE_CHECKING
+
 from .inventory import ModEntry
+
+if TYPE_CHECKING:
+    from .vortex_mod_context import ModIntelligence
 
 # Dimensiones públicas (pueden coexistir)
 INSTALADO_REAL = "INSTALADO_REAL"
@@ -50,6 +55,12 @@ ESTRUCTURA_BLOQUEO = "ESTRUCTURA_BLOQUEO"
 FORMATO_UE4_PAK = "FORMATO_UE4_PAK"
 FORMATO_UE5_IOSTORE = "FORMATO_UE5_IOSTORE"
 FORMATO_GENERICO = "FORMATO_GENERICO"
+# S44 — capas Vortex / F7777 (independientes)
+VORTEX_ENABLED_HISTORICO = "VORTEX_ENABLED_HISTORICO"
+VORTEX_ENABLED_VERIFICADO = "VORTEX_ENABLED_VERIFICADO"
+GESTIONADO_F7777 = "GESTIONADO_F7777"
+COMPAT_DESCONOCIDA = "COMPAT_DESCONOCIDA"
+VORTEX_AUX_LOADORDER = "VORTEX_AUX_LOADORDER"
 
 ALL_FLAGS = (
     INSTALADO_REAL,
@@ -68,6 +79,11 @@ ALL_FLAGS = (
     FORMATO_UE4_PAK,
     FORMATO_UE5_IOSTORE,
     FORMATO_GENERICO,
+    VORTEX_ENABLED_HISTORICO,
+    VORTEX_ENABLED_VERIFICADO,
+    GESTIONADO_F7777,
+    COMPAT_DESCONOCIDA,
+    VORTEX_AUX_LOADORDER,
 )
 
 # Filtros de UI (etiqueta → predicado sobre flags / mod)
@@ -105,6 +121,7 @@ def compute_mod_status(
     m: ModEntry,
     *,
     structure_report: object | None = None,
+    intel: ModIntelligence | None = None,
 ) -> ModStatusView:
     flags: set[str] = set()
     src = (getattr(m, "source_kind", "") or "").upper()
@@ -156,10 +173,25 @@ def compute_mod_status(
     if _pendiente_vortex_hint(m):
         flags.add(PENDIENTE_VORTEX)
 
-    if m.usar and m.multi and not m.pak_elegido:
-        flags.add(VARIANTE_PENDIENTE)
+    if m.usar and m.multi:
+        from .component_selection import selection_pending
+
+        if selection_pending(m):
+            flags.add(VARIANTE_PENDIENTE)
     if m.usar and _conflict_serious(m):
         flags.add(CONFLICTO)
+
+    if intel is not None:
+        if intel.vortex_enabled_verified is True:
+            flags.add(VORTEX_ENABLED_VERIFICADO)
+        if intel.vortex_enabled_historical is True:
+            flags.add(VORTEX_ENABLED_HISTORICO)
+        if intel.managed_f7777:
+            flags.add(GESTIONADO_F7777)
+        if intel.compat_unknown and m.paks:
+            flags.add(COMPAT_DESCONOCIDA)
+        if intel.aux.load_order_index is not None:
+            flags.add(VORTEX_AUX_LOADORDER)
 
     has_source = (
         INSTALADO_REAL in flags
@@ -206,6 +238,11 @@ def status_badges_text(st: ModStatusView) -> str:
         CONFLICTO,
         VARIANTE_PENDIENTE,
         NO_DISPONIBLE,
+        VORTEX_ENABLED_HISTORICO,
+        VORTEX_ENABLED_VERIFICADO,
+        GESTIONADO_F7777,
+        COMPAT_DESCONOCIDA,
+        VORTEX_AUX_LOADORDER,
     ]
     present = [f for f in order if f in st.flags]
     if not present:
@@ -258,6 +295,11 @@ def mod_matches_dimension_filter(m: ModEntry, st: ModStatusView, filt: str) -> b
         "Formato UE4 PAK": FORMATO_UE4_PAK,
         "Formato UE5 IoStore": FORMATO_UE5_IOSTORE,
         "Formato genérico": FORMATO_GENERICO,
+        "Enabled Vortex (hist.)": VORTEX_ENABLED_HISTORICO,
+        "Enabled Vortex (verif.)": VORTEX_ENABLED_VERIFICADO,
+        "Gestionado F7777": GESTIONADO_F7777,
+        "Compat. desconocida": COMPAT_DESCONOCIDA,
+        "Load order Vortex (aux)": VORTEX_AUX_LOADORDER,
     }
     if filt in mapping:
         return st.has(mapping[filt])
@@ -286,13 +328,20 @@ def filter_mods(
     dimension: str = FILTER_ALL,
     source: str = "TODAS",
     character: str = "TODOS",
+    tag: str = "TODAS",
     structure_by_folder: dict[str, object] | None = None,
+    intel_by_folder: dict[str, object] | None = None,
 ) -> list[ModEntry]:
     """Filtrado puro (sin I/O). Apto para inventarios grandes en tests."""
     out: list[ModEntry] = []
     for m in mods:
         if character not in ("", "TODOS") and m.character_main != character:
             continue
+        if tag and tag not in ("", "TODAS"):
+            from .library_catalog_model import mod_matches_tag
+
+            if not mod_matches_tag(m, tag):
+                continue
         src = (getattr(m, "source_kind", "") or "STAGING_VORTEX").upper()
         if source == "VORTEX" and "WORK" in src:
             continue
@@ -301,7 +350,10 @@ def filter_mods(
         rep = None
         if structure_by_folder is not None:
             rep = structure_by_folder.get(m.folder)
-        st = compute_mod_status(m, structure_report=rep)
+        intel = None
+        if intel_by_folder is not None:
+            intel = intel_by_folder.get(m.folder)
+        st = compute_mod_status(m, structure_report=rep, intel=intel)
         if not mod_matches_dimension_filter(m, st, dimension):
             continue
         if not mod_matches_query(m, query):

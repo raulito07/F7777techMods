@@ -284,7 +284,7 @@ class S27LibraryUiTests(unittest.TestCase):
         m.on_disk = True
         lib.tree.selection_set(m.folder)
         lib.on_select()
-        txt = lib.detail_badges.cget("text")
+        txt = lib.detail_state.cget("text")
         self.assertIn("ACTIVO_EN_PLAN", txt)
         self.assertIn("INSTALADO_REAL", txt)
 

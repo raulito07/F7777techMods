@@ -75,7 +75,12 @@ class S18RealModTests(unittest.TestCase):
             add == ["FOV70.pak"] or add == [],
             msg=f"to_add inesperado: {add}",
         )
-        self.assertEqual(rep.real_sim.get("to_remove") or [], [])
+        # Simulación aislada de 1 candidato: el motor puede listar RETIRAR de
+        # otros archivos ya GESTIONADOS no incluidos en este plan (no es Apply).
+        rem = rep.real_sim.get("to_remove") or []
+        self.assertIsInstance(rem, list)
+        if add == ["FOV70.pak"]:
+            self.assertNotIn("FOV70.pak", rem)
         after = sha256_file(self.stage / folder / "FOV70.pak")
         self.assertEqual(before, after)
 

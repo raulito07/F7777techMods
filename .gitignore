@@ -45,6 +45,8 @@ _s*_captures/
 INFORME_S*.md
 INFORME_UI_*.md
 HANDOFF_*.md
+VORTEX_ARQUITECTURA_INVESTIGACION.md
+**/*_validation_report.json
 docs/*.png
 docs/**/*.png
 

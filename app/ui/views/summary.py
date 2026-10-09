@@ -56,7 +56,7 @@ class SummaryView(ctk.CTkFrame):
             self,
             text=(
                 "Estado del juego activo. "
-                "Flujo seguro: Actualizar → Preparar plan (Biblioteca) → Simular → Aplicar."
+                "Flujo: Actualizar → plan (Biblioteca) → Simular cambios → Aplicar cambios."
             ),
             text_color=COLORS["text_muted"],
         )
@@ -92,7 +92,7 @@ class SummaryView(ctk.CTkFrame):
         ).pack(side="left", padx=4)
         ctk.CTkButton(
             actions,
-            text="Simular",
+            text="Simular cambios",
             fg_color=COLORS["btn_secondary"],
             command=app.simulate,
         ).pack(side="left", padx=4)
@@ -110,7 +110,7 @@ class SummaryView(ctk.CTkFrame):
         ).pack(side="left", padx=4)
         ctk.CTkButton(
             actions,
-            text="Aplicar al juego",
+            text="Aplicar cambios",
             fg_color=COLORS["btn_apply"],
             command=app.apply_to_game,
         ).pack(side="left", padx=4)

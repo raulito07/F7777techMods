@@ -278,8 +278,10 @@ class S06UITests(unittest.TestCase):
         app._analysis_for_gen = 1  # distinto de session_gen=3
         self.assertFalse(app.plan_is_applyable())
 
-        # Análisis vigente limpio → aplicable
+        # Análisis vigente limpio con acción de instalación → aplicable
         app._analysis_for_gen = 3
+        app._last_plan.to_add = ["demo.pak"]
+        app._capture_apply_simulation(app._last_plan)
         with mock.patch("app.ui.app.vortex_deploy_present", return_value=False):
             self.assertTrue(app.plan_is_applyable())
             app._sync_apply_button()

@@ -84,6 +84,8 @@ class ModEntry:
     slots: list[str] = field(default_factory=list)
     usar: bool = False
     pak_elegido: str = ""
+    paks_elegidos: list[str] = field(default_factory=list)
+    selection_mode: str = ""
     conflicto: str = ""
     picture_url: str = ""
     thumb_path: str = ""
@@ -97,6 +99,12 @@ class ModEntry:
     archive_zip_sha256: str = ""
     work_extracted: bool = False
     archived: bool = False
+    # S38 — identidad de componente dentro de un paquete/colección
+    package_folder: str = ""
+    package_name: str = ""
+    companion_ids: list[str] = field(default_factory=list)
+    tag_certainty: str = ""
+    installable_unit: bool = True
 
     def to_dict(self) -> dict:
         return asdict(self)
