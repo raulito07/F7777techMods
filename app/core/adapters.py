@@ -21,7 +21,11 @@ Licencia Pública General de GNU para más detalles.
 Debería haber recibido una copia de la Licencia Pública General de GNU
 junto con este programa. Si no, vea <https://www.gnu.org/licenses/>.
 
-Perfiles/adaptadores sencillos por tipo de juego (extensibles).
+Perfiles/adaptadores oficiales por tipo de juego.
+
+S50: aportaciones comunitarias van en JSON (`community_adapters/`) vía
+`community_adapter_*`. Este registro oficial no se sustituye por JSON
+y sigue siendo el único que alimenta flags del motor Apply.
 """
 
 from __future__ import annotations

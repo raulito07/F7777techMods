@@ -160,6 +160,8 @@ def expand_independent_packages(mods: list[ModEntry]) -> list[ModEntry]:
                 companion_ids=companions,
                 tag_certainty=tag_c,
                 installable_unit=True,
+                payload_files=list(getattr(m, "payload_files", None) or []),
+                payload_exts=list(getattr(m, "payload_exts", None) or []),
             )
             out.append(child)
     return out

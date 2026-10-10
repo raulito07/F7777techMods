@@ -79,8 +79,17 @@ def tags_for_mod(m: ModEntry) -> list[str]:
         out.append("ARCHIVADO")
     if m.multi:
         out.append("MULTI_COMPONENTE")
-    if m.paks:
+    payload = getattr(m, "payload_files", None) or []
+    payload_exts = getattr(m, "payload_exts", None) or []
+    if m.paks or payload:
         out.append("CON_ARCHIVOS")
+    else:
+        out.append("SIN_ARCHIVOS")
+    # S49 — identidad aunque el formato no sea instalable F7777
+    if not m.paks and payload_exts:
+        known_install = {".pak", ".utoc", ".ucas"}
+        if not any(e in known_install for e in payload_exts):
+            out.append("FORMATO_NO_INSTALABLE")
     # dedupe preserving order
     seen: set[str] = set()
     uniq: list[str] = []

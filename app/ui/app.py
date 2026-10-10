@@ -122,6 +122,7 @@ class ModManagerApp(ctk.CTk):
         self.by_id: dict[str, ModEntry] = {}
         self.vortex_meta: dict = {}
         self.mod_intel: dict = {}
+        self.mod_investigations: dict = {}
         self._photo_ref = None
         self._thumb_cache = ThumbImageCache()
         self._thumb_async = ThumbAsyncRuntime(self, cache=self._thumb_cache)
@@ -739,6 +740,7 @@ class ModManagerApp(ctk.CTk):
         if not self.session:
             self.mods = []
             self.mod_intel = {}
+            self.mod_investigations = {}
             self.by_id = {}
             self._update_footer()
             self.status.configure(text="Sin juego activo")
@@ -778,6 +780,7 @@ class ModManagerApp(ctk.CTk):
                 m.thumb_path = str(cand)
         evaluate(self.mods, semantic=self._semantic())
         self._refresh_mod_intel(ctx)
+        self._refresh_mod_investigations(ctx)
         self.by_id = {m.folder: m for m in self.mods}
         self._update_footer()
         self.view_library.refresh()
@@ -808,6 +811,38 @@ class ModManagerApp(ctk.CTk):
             game_id=self.session.vortex_game_id or "",
             ctx=ctx,
             adapter_id=str(getattr(self.session.record, "adapter", "") or ""),
+        )
+
+    def _refresh_mod_investigations(self, ctx) -> None:
+        """S49 — investigador universal (solo lectura; no autoriza Apply)."""
+        if not self.session:
+            self.mod_investigations = {}
+            return
+        from ..core.mod_investigator import investigate_mods, read_plugin_installer_hints
+
+        aid = str(getattr(self.session.record, "adapter", "") or "generic_folder")
+        vg = self.session.vortex_game_id or ""
+        hints = read_plugin_installer_hints(vg) if vg else {}
+        game_root = None
+        try:
+            gr = getattr(self.session.record, "game_root", None)
+            if gr:
+                from pathlib import Path
+
+                game_root = Path(gr)
+        except Exception:
+            game_root = None
+        mods_dest = getattr(ctx, "mods", None)
+        # Usa payload del inventario; índice Vortex se carga una vez en investigate_mods
+        self.mod_investigations = investigate_mods(
+            self.mods,
+            adapter_id=aid,
+            game_id=str(getattr(self.session.record, "id", "") or ""),
+            vortex_game_id=vg,
+            game_root=game_root,
+            mods_dest=mods_dest,
+            plugin_hints=hints,
+            load_vortex=True,
         )
 
     def _thumbs_ready(self, gen: int) -> None:

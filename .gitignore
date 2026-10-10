@@ -58,6 +58,9 @@ tools/s11_*.py
 tools/s12_*.py
 tools/s19_*.py
 tools/s20_ui_captures.py
+# Helpers locales de sprint (prefijo _s / benches); no publicar
+tools/_s*.py
+tools/bench_presentations_phases.py
 
 # --- Legacy scripts locales ---
 legacy/**

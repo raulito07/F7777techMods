@@ -1,0 +1,61 @@
+{
+  "api_version": "1.0",
+  "adapter_id": "nebula_rift_shaders",
+  "display_name": "Nebula Rift — Shaders externos (ficticio)",
+  "game_ids": ["nebula_rift"],
+  "author": "Community Example (Four Seven Tech)",
+  "license": "GPL-3.0-or-later",
+  "permissions": [
+    "declare_formats",
+    "declare_destinations",
+    "declare_manual_instructions",
+    "declare_game_detection"
+  ],
+  "detection": {
+    "steam_app_ids": ["900002"],
+    "folder_name_contains": ["NebulaRift"],
+    "required_relative_paths": ["Binaries"],
+    "notes": "Juego ficticio con mods solo vía herramienta externa."
+  },
+  "formats": [
+    {
+      "id": "nr_shader",
+      "extensions": [".nrshade", ".fx"],
+      "label": "Shader Nebula",
+      "installer_id": "",
+      "notes": "Instalación externa obligatoria."
+    }
+  ],
+  "destinations": [
+    {
+      "id": "shader_dir",
+      "relative_path": "Binaries/Shaders",
+      "format_ids": ["nr_shader"],
+      "verified": false,
+      "evidence": "debil",
+      "notes": "Herramienta externa 'Nebula Injector' (ficticia)."
+    }
+  ],
+  "capabilities": ["inventory", "external_tool_hint"],
+  "manual_instructions": [
+    {
+      "title": "Usar herramienta externa",
+      "confirmed": false,
+      "steps": [
+        "Abrir Nebula Injector",
+        "Seleccionar el shader y desplegar",
+        "No reemplazar DXGI del juego sin backup propio"
+      ]
+    }
+  ],
+  "compatibility": {
+    "summary": "Solo orientación; F7777 no instala shaders automáticamente.",
+    "evidence": "sin_pruebas",
+    "test_refs": []
+  },
+  "limitations": [
+    "INSTALACION_EXTERNA",
+    "Sin instalador F7777"
+  ],
+  "auto_install_allowed": false
+}

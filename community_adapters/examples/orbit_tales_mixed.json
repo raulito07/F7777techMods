@@ -1,0 +1,71 @@
+{
+  "api_version": "1.0",
+  "adapter_id": "orbit_tales_mixed",
+  "display_name": "Orbit Tales — mods mixtos (ficticio)",
+  "game_ids": ["orbit_tales"],
+  "author": "Community Example (Four Seven Tech)",
+  "license": "GPL-3.0-or-later",
+  "maps_to_official_adapter": "generic_folder",
+  "permissions": [
+    "declare_formats",
+    "declare_destinations",
+    "declare_manual_instructions",
+    "declare_game_detection",
+    "request_code_extension_review"
+  ],
+  "detection": {
+    "folder_name_contains": ["Orbit Tales"],
+    "required_relative_paths": ["Content", "Mods"],
+    "notes": "Estructura mixta: carpetas sueltas + manifiesto .otmod"
+  },
+  "formats": [
+    {
+      "id": "ot_manifest",
+      "extensions": [".otmod"],
+      "label": "Manifiesto Orbit",
+      "installer_id": "",
+      "notes": "Manifiesto sin instalador automático."
+    },
+    {
+      "id": "ot_assets",
+      "extensions": [".otasset"],
+      "label": "Asset Orbit",
+      "installer_id": "",
+      "notes": "Requiere resolución de destino por componente."
+    }
+  ],
+  "destinations": [
+    {
+      "id": "mods_root",
+      "relative_path": "Mods",
+      "format_ids": ["ot_manifest", "ot_assets"],
+      "verified": false,
+      "evidence": "probable",
+      "notes": "maps_to_official_adapter es solo pista UI."
+    }
+  ],
+  "dependencies_notes": "Los .otasset pueden declarar dependencias en el .otmod.",
+  "conflicts_notes": "Prioridad por nombre de carpeta; sin reglas de load order en v1.",
+  "capabilities": ["inventory", "multi_component_hint"],
+  "manual_instructions": [
+    {
+      "title": "Estructura esperada",
+      "confirmed": false,
+      "steps": [
+        "Colocar carpeta del mod bajo Mods/",
+        "Asegurar que exista el .otmod en la raíz del mod",
+        "Activar desde el launcher del juego"
+      ]
+    }
+  ],
+  "compatibility": {
+    "summary": "Solicita revisión futura de extensión con código; no ejecutable hoy.",
+    "evidence": "sin_pruebas",
+    "test_refs": ["tests/fixtures/orbit_tales/"]
+  },
+  "limitations": [
+    "Código de terceros no se ejecuta en API 1.0",
+    "Sin Apply automático"
+  ],
+  "auto_install_allowed": false
+}

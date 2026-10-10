@@ -61,6 +61,13 @@ VORTEX_ENABLED_VERIFICADO = "VORTEX_ENABLED_VERIFICADO"
 GESTIONADO_F7777 = "GESTIONADO_F7777"
 COMPAT_DESCONOCIDA = "COMPAT_DESCONOCIDA"
 VORTEX_AUX_LOADORDER = "VORTEX_AUX_LOADORDER"
+# S49 — investigación universal (capacidad ≠ identidad)
+INVEST_CONFIRMADA = "INVEST_CONFIRMADA"
+INVEST_PROBABLE = "INVEST_PROBABLE"
+INVEST_EXTERNA = "INVEST_EXTERNA"
+INVEST_NO_SOPORTADA = "INVEST_NO_SOPORTADA"
+INVEST_DESCONOCIDA = "INVEST_DESCONOCIDA"
+FORMATO_SIN_PAK = "FORMATO_SIN_PAK"
 
 ALL_FLAGS = (
     INSTALADO_REAL,
@@ -84,6 +91,12 @@ ALL_FLAGS = (
     GESTIONADO_F7777,
     COMPAT_DESCONOCIDA,
     VORTEX_AUX_LOADORDER,
+    INVEST_CONFIRMADA,
+    INVEST_PROBABLE,
+    INVEST_EXTERNA,
+    INVEST_NO_SOPORTADA,
+    INVEST_DESCONOCIDA,
+    FORMATO_SIN_PAK,
 )
 
 # Filtros de UI (etiqueta → predicado sobre flags / mod)
@@ -122,6 +135,7 @@ def compute_mod_status(
     *,
     structure_report: object | None = None,
     intel: ModIntelligence | None = None,
+    investigation: object | None = None,
 ) -> ModStatusView:
     flags: set[str] = set()
     src = (getattr(m, "source_kind", "") or "").upper()
@@ -193,6 +207,23 @@ def compute_mod_status(
         if intel.aux.load_order_index is not None:
             flags.add(VORTEX_AUX_LOADORDER)
 
+    # S49 — capacidad de instalación (independiente de identidad)
+    if investigation is not None:
+        cap_obj = getattr(investigation, "capability", None)
+        raw = getattr(cap_obj, "value", None) or str(cap_obj or "")
+        mapping = {
+            "INSTALACION_CONFIRMADA": INVEST_CONFIRMADA,
+            "INSTALACION_PROBABLE": INVEST_PROBABLE,
+            "INSTALACION_EXTERNA": INVEST_EXTERNA,
+            "NO_SOPORTADO": INVEST_NO_SOPORTADA,
+            "DESCONOCIDO": INVEST_DESCONOCIDA,
+        }
+        flag = mapping.get(str(raw))
+        if flag:
+            flags.add(flag)
+    if not m.paks and (getattr(m, "payload_files", None) or getattr(m, "payload_exts", None)):
+        flags.add(FORMATO_SIN_PAK)
+
     has_source = (
         INSTALADO_REAL in flags
         or DISPONIBLE_EN_WORK in flags
@@ -200,6 +231,7 @@ def compute_mod_status(
         or ARCHIVADO_VERIFICADO in flags
         or stage_ok
         or bool(m.paks)
+        or bool(getattr(m, "payload_files", None))
     )
     if not has_source:
         flags.add(NO_DISPONIBLE)
@@ -243,6 +275,12 @@ def status_badges_text(st: ModStatusView) -> str:
         GESTIONADO_F7777,
         COMPAT_DESCONOCIDA,
         VORTEX_AUX_LOADORDER,
+        INVEST_CONFIRMADA,
+        INVEST_PROBABLE,
+        INVEST_EXTERNA,
+        INVEST_NO_SOPORTADA,
+        INVEST_DESCONOCIDA,
+        FORMATO_SIN_PAK,
     ]
     present = [f for f in order if f in st.flags]
     if not present:
@@ -254,8 +292,11 @@ def mod_matches_query(m: ModEntry, query: str) -> bool:
     q = (query or "").strip().lower()
     if not q:
         return True
+    payload = " ".join(getattr(m, "payload_files", None) or [])
+    payload_exts = " ".join(getattr(m, "payload_exts", None) or [])
     blob = (
         f"{m.name} {m.description} {m.category} {' '.join(m.paks)} "
+        f"{payload} {payload_exts} "
         f"{m.folder} {m.author} {m.nexus_mod_name}"
     ).lower()
     # Búsqueda parcial: todas las palabras deben aparecer
@@ -300,6 +341,12 @@ def mod_matches_dimension_filter(m: ModEntry, st: ModStatusView, filt: str) -> b
         "Gestionado F7777": GESTIONADO_F7777,
         "Compat. desconocida": COMPAT_DESCONOCIDA,
         "Load order Vortex (aux)": VORTEX_AUX_LOADORDER,
+        "Invest. confirmada": INVEST_CONFIRMADA,
+        "Invest. probable": INVEST_PROBABLE,
+        "Invest. externa": INVEST_EXTERNA,
+        "Invest. no soportada": INVEST_NO_SOPORTADA,
+        "Invest. desconocida": INVEST_DESCONOCIDA,
+        "Sin .pak (payload)": FORMATO_SIN_PAK,
     }
     if filt in mapping:
         return st.has(mapping[filt])
@@ -331,6 +378,7 @@ def filter_mods(
     tag: str = "TODAS",
     structure_by_folder: dict[str, object] | None = None,
     intel_by_folder: dict[str, object] | None = None,
+    investigation_by_folder: dict[str, object] | None = None,
 ) -> list[ModEntry]:
     """Filtrado puro (sin I/O). Apto para inventarios grandes en tests."""
     out: list[ModEntry] = []
@@ -353,7 +401,12 @@ def filter_mods(
         intel = None
         if intel_by_folder is not None:
             intel = intel_by_folder.get(m.folder)
-        st = compute_mod_status(m, structure_report=rep, intel=intel)
+        inv = None
+        if investigation_by_folder is not None:
+            inv = investigation_by_folder.get(m.folder)
+        st = compute_mod_status(
+            m, structure_report=rep, intel=intel, investigation=inv
+        )
         if not mod_matches_dimension_filter(m, st, dimension):
             continue
         if not mod_matches_query(m, query):

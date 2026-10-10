@@ -104,6 +104,13 @@ _STATE_FILTER_VALUES = [
     "Formato UE4 PAK",
     "Formato UE5 IoStore",
     "Formato genérico",
+    # S49 investigación
+    "Invest. confirmada",
+    "Invest. probable",
+    "Invest. externa",
+    "Invest. no soportada",
+    "Invest. desconocida",
+    "Sin .pak (payload)",
 ]
 
 
@@ -674,11 +681,15 @@ class LibraryView(ctk.CTkFrame):
         gid = self.app.session.record.id if self.app.session else ""
         intel_map = getattr(self.app, "mod_intel", None) or {}
         struct_map = getattr(self.app, "_structure_by_folder", None) or {}
+        inv_map = getattr(self.app, "mod_investigations", None) or {}
         out = []
         for m in mods:
             srep = struct_map.get(m.folder)
             intel = intel_map.get(m.folder)
-            st = compute_mod_status(m, structure_report=srep, intel=intel)
+            inv = inv_map.get(m.folder)
+            st = compute_mod_status(
+                m, structure_report=srep, intel=intel, investigation=inv
+            )
             tag, lab = self._row_tag(m)
             warns = []
             if m.conflicto:
@@ -742,6 +753,7 @@ class LibraryView(ctk.CTkFrame):
 
         struct = getattr(app, "_structure_by_folder", None) or {}
         intel_map = getattr(app, "mod_intel", None) or {}
+        inv_map = getattr(app, "mod_investigations", None) or {}
         out = filter_mods(
             app.mods,
             query=self.search_var.get(),
@@ -750,6 +762,7 @@ class LibraryView(ctk.CTkFrame):
             tag=self.tag_var.get(),
             structure_by_folder=struct,
             intel_by_folder=intel_map,
+            investigation_by_folder=inv_map,
         )
 
         sk = self.sort_var.get()
@@ -1133,9 +1146,19 @@ class LibraryView(ctk.CTkFrame):
         struct_map = getattr(self.app, "_structure_by_folder", None) or {}
         srep = struct_map.get(m.folder)
         intel = (getattr(self.app, "mod_intel", None) or {}).get(m.folder)
-        st = compute_mod_status(m, structure_report=srep, intel=intel)
+        inv = (getattr(self.app, "mod_investigations", None) or {}).get(m.folder)
+        st = compute_mod_status(
+            m, structure_report=srep, intel=intel, investigation=inv
+        )
         conf_txt = m.conflicto if m.conflicto else "(sin conflicto reportado)"
         prov_txt = intel.provenance_summary() if intel else "(intel Vortex no cargada)"
+        from ...core.player_support_messages import (
+            player_facing_investigation,
+            player_facing_unknown_mod,
+        )
+
+        player_inv = player_facing_investigation(inv)
+        inv_txt = inv.library_summary() if inv else "(investigación S49 no cargada)"
         staging_txt = self._staging_change_label(m)
         from ...core.game_status import lifecycle_for_mod
 
@@ -1198,11 +1221,17 @@ class LibraryView(ctk.CTkFrame):
             warn_lines.append("Revisión de estructura recomendada.")
         if srep is not None and srep.blocks_prepare:
             warn_lines.append("Bloqueo de preparación / Apply.")
+        if inv is not None and not getattr(inv, "f7777_installable", False):
+            warn_lines.append(
+                player_facing_unknown_mod(mod_name=m.nexus_mod_name or m.name).split("\n")[0]
+            )
         self.detail_warnings.configure(
             text=("Advertencias: " + " · ".join(warn_lines)) if warn_lines else ""
         )
+        # S50 — resumen claro al jugador; detalle técnico solo en «Información técnica»
         self.detail_provenance.configure(
             text=(
+                f"{player_inv}\n\n"
                 f"Procedencia\n{prov_txt}\n\n"
                 f"Paquete origen: "
                 f"{getattr(m, 'package_name', '') or getattr(m, 'package_folder', '') or '—'}\n"
@@ -1281,6 +1310,8 @@ class LibraryView(ctk.CTkFrame):
                 f"{', '.join(getattr(m, 'paks_elegidos', None) or ([m.pak_elegido] if m.pak_elegido else [])) or ('(elige)' if m.multi else '—')}\n"
                 f"Modo selección: {getattr(m, 'selection_mode', '') or '(auto)'}\n"
                 f"Multi: {'SI' if m.multi else 'NO'}  ·  Paks conocidos: {len(m.paks)}\n"
+                f"Payload: {len(getattr(m, 'payload_files', None) or [])} "
+                f"exts={', '.join(getattr(m, 'payload_exts', None) or []) or '—'}\n"
                 f"Tipo: {m.category or '(no disponible)'}\n"
                 f"Etiquetas motor: {', '.join(tags_for_mod(m)) or '(ninguna)'}\n"
                 f"{struct_txt}"
@@ -1291,6 +1322,7 @@ class LibraryView(ctk.CTkFrame):
                 f"Slots: {', '.join(m.slots) or '(no disponible)'}\n"
                 f"{plan_hint}"
                 f"{cls_txt}"
+                f"\nDetalle avanzado investigación (S49)\n{inv_txt}\n"
                 f"\nArchivos relevantes (plan / staging):\n{files_txt}"
             ),
         )

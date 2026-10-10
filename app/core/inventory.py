@@ -31,6 +31,19 @@ from pathlib import Path
 
 from .paths import STAGE, DEPLOY
 
+# Extensiones de payload inventariables (S49). No implica instalabilidad.
+_PAYLOAD_SKIP_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
+_PAYLOAD_SKIP_SUFFIXES = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".db",
+}
+_PAYLOAD_MAX_FILES = 200
+
 CHAR_PATS = [
     ("CLOUD", ["cloud", "buster sword", "hard edge", "iron sword", "mythril", "fusion sword", "noctis", "squall"]),
     ("TIFA", ["tifa"]),
@@ -105,9 +118,48 @@ class ModEntry:
     companion_ids: list[str] = field(default_factory=list)
     tag_certainty: str = ""
     installable_unit: bool = True
+    # S49 — payload universal (identidad en Biblioteca ≠ instalable)
+    payload_files: list[str] = field(default_factory=list)
+    payload_exts: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def package_payload_summary(mod: ModEntry) -> tuple[list[str], list[str]]:
+    """Devuelve (payload_files, payload_exts) del ModEntry."""
+    files = list(getattr(mod, "payload_files", None) or [])
+    exts = list(getattr(mod, "payload_exts", None) or [])
+    return files, exts
+
+
+def collect_payload(stage_dir: Path) -> tuple[list[str], list[str]]:
+    """
+    Lista relativa de archivos de payload y extensiones únicas (solo lectura).
+    Incluye formatos desconocidos para que el mod aparezca en Biblioteca.
+    """
+    files: list[str] = []
+    ext_set: set[str] = set()
+    if not stage_dir.is_dir():
+        return files, []
+    for p in stage_dir.rglob("*"):
+        if not p.is_file():
+            continue
+        if p.name.lower() in _PAYLOAD_SKIP_NAMES:
+            continue
+        suf = p.suffix.lower()
+        if suf in _PAYLOAD_SKIP_SUFFIXES:
+            continue
+        try:
+            rel = str(p.relative_to(stage_dir)).replace("\\", "/")
+        except ValueError:
+            rel = p.name
+        files.append(rel)
+        ext_set.add(suf or "(none)")
+        if len(files) >= _PAYLOAD_MAX_FILES:
+            break
+    files.sort(key=str.lower)
+    return files, sorted(ext_set)
 
 
 def load_deployed_sources(deploy_path: Path | None = None) -> set[str]:
@@ -136,8 +188,9 @@ def scan_staging(
         if not d.is_dir():
             continue
         paks = sorted(p.name for p in d.rglob("*.pak"))
+        payload_files, payload_exts = collect_payload(d)
         name = short_name(d.name)
-        chars = classify(d.name + " " + " ".join(paks))
+        chars = classify(d.name + " " + " ".join(paks) + " " + " ".join(payload_exts))
         rows.append(
             ModEntry(
                 folder=d.name,
@@ -152,6 +205,10 @@ def scan_staging(
                 usar=d.name in deployed,
                 pak_elegido=paks[0] if len(paks) == 1 else "",
                 source_kind="STAGING_VORTEX",
+                # Identidad en Biblioteca siempre; instalabilidad la decide el investigador
+                installable_unit=True,
+                payload_files=payload_files,
+                payload_exts=payload_exts,
             )
         )
     return rows

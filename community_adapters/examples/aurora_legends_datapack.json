@@ -1,0 +1,62 @@
+{
+  "api_version": "1.0",
+  "adapter_id": "aurora_legends_datapack",
+  "display_name": "Aurora Legends — DataPack (ficticio)",
+  "game_ids": ["aurora_legends"],
+  "author": "Community Example (Four Seven Tech)",
+  "license": "GPL-3.0-or-later",
+  "permissions": [
+    "declare_formats",
+    "declare_destinations",
+    "declare_manual_instructions",
+    "declare_game_detection"
+  ],
+  "detection": {
+    "steam_app_ids": ["900001"],
+    "folder_name_contains": ["Aurora Legends"],
+    "required_relative_paths": ["Game/Data"],
+    "notes": "Ejemplo sintético. No corresponde a un juego real."
+  },
+  "formats": [
+    {
+      "id": "datapack_zip",
+      "extensions": [".datapack"],
+      "label": "Paquete de datos Aurora",
+      "installer_id": "",
+      "notes": "Formato declarado sin instalador F7777 (solo reconocimiento)."
+    }
+  ],
+  "destinations": [
+    {
+      "id": "data_mods",
+      "relative_path": "Game/Data/Mods",
+      "format_ids": ["datapack_zip"],
+      "verified": false,
+      "evidence": "probable",
+      "notes": "Destino probable; no verificado con pruebas automatizadas."
+    }
+  ],
+  "dependencies_notes": "Algunos packs requieren el mod base 'Aurora Core' (ficticio).",
+  "conflicts_notes": "Dos .datapack con el mismo nombre interno se pisan.",
+  "capabilities": ["inventory", "manual_guidance"],
+  "manual_instructions": [
+    {
+      "title": "Instalación manual orientativa",
+      "confirmed": false,
+      "steps": [
+        "Copiar el .datapack a Game/Data/Mods",
+        "Arrancar el juego y activar el pack en el menú Mods"
+      ]
+    }
+  ],
+  "compatibility": {
+    "summary": "Ejemplo educativo; sin pruebas de instalación real.",
+    "evidence": "sin_pruebas",
+    "test_refs": ["tests/test_s50_community_adapters.py"]
+  },
+  "limitations": [
+    "No habilita Apply",
+    "No sobrescribe archivos originales del juego"
+  ],
+  "auto_install_allowed": false
+}

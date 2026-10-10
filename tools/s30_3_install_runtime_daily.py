@@ -132,6 +132,15 @@ def build_stage() -> Path:
     # App package + entry
     shutil.copytree(ROOT / "app", STAGE / "app")
     shutil.copy2(ROOT / "run_f7777techmods.py", STAGE / "run_f7777techmods.py")
+    # S50 — adaptadores comunitarios declarativos + schema (sin código ejecutable)
+    for rel in ("community_adapters", "schemas"):
+        src = ROOT / rel
+        if src.is_dir():
+            shutil.copytree(src, STAGE / rel)
+    for name in ("GAME_ADAPTER_GUIDE.md", "CONTRIBUTING.md"):
+        src = ROOT / name
+        if src.is_file():
+            shutil.copy2(src, STAGE / name)
     lic = STAGE / "licenses"
     lic.mkdir(exist_ok=True)
     for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):

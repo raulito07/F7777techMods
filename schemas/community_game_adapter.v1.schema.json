@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fourseventechnology.local/schemas/community_game_adapter.v1.schema.json",
+  "title": "F7777techMods Community Game Adapter v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "adapter_id", "display_name", "game_ids"],
+  "properties": {
+    "api_version": { "const": "1.0" },
+    "adapter_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,63}$",
+      "description": "Must not collide with official adapter ids"
+    },
+    "display_name": { "type": "string", "minLength": 1 },
+    "game_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "author": { "type": "string" },
+    "license": { "type": "string", "default": "GPL-3.0-or-later" },
+    "maps_to_official_adapter": {
+      "type": "string",
+      "description": "Optional UI hint only; does not enable Apply"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "declare_formats",
+          "declare_destinations",
+          "declare_manual_instructions",
+          "declare_game_detection",
+          "request_code_extension_review"
+        ]
+      }
+    },
+    "formats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "extensions"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "extensions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "label": { "type": "string" },
+          "installer_id": {
+            "type": "string",
+            "description": "Empty = recognized without F7777 installer"
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "destinations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "relative_path"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "relative_path": {
+            "type": "string",
+            "description": "Relative to game root; no .. or absolute paths"
+          },
+          "format_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "verified": { "type": "boolean", "default": false },
+          "evidence": {
+            "type": "string",
+            "enum": ["confirmada", "probable", "debil", "ninguna", "sin_pruebas"]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "steam_app_ids": { "type": "array", "items": { "type": "string" } },
+        "folder_name_contains": { "type": "array", "items": { "type": "string" } },
+        "required_relative_paths": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "dependencies_notes": { "type": "string" },
+    "conflicts_notes": { "type": "string" },
+    "capabilities": { "type": "array", "items": { "type": "string" } },
+    "manual_instructions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "steps"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "steps": { "type": "array", "items": { "type": "string" } },
+          "confirmed": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": { "type": "string" },
+        "evidence": {
+          "type": "string",
+          "enum": ["confirmada", "probable", "debil", "ninguna", "sin_pruebas"]
+        },
+        "test_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "auto_install_allowed": {
+      "type": "boolean",
+      "const": false,
+      "description": "Must be false; community adapters cannot enable Apply"
+    }
+  }
+}

@@ -27,7 +27,9 @@ Aplicación **independiente**; no afiliada a Square Enix, Steam, Nexus Mods ni V
 - Archivado ZIP propio y ciclo **WORK_LIBRARY**
 - Identidad de paquetes y contexto de mods importados desde Vortex (modelo de lectura, no sustituye a Vortex)
 
-> La interfaz y el motor están pensados para ampliarse a más juegos, pero los **adaptadores de instalación disponibles siguen siendo limitados** (ver tabla de compatibilidad). No es soporte universal de instalación.
+> F7777techMods **pretende admitir cualquier juego** mediante adaptadores. Eso no implica **instalación automática universal**: reconocer un juego, un mod o un formato no habilita Apply.
+>
+> Los **adaptadores comunitarios v1** son JSON **declarativos** (reconocimiento, destinos relativos, instrucciones). Los nuevos procedimientos de instalación requieren validación y revisión de seguridad. Guía: [GAME_ADAPTER_GUIDE.md](GAME_ADAPTER_GUIDE.md) · schema: [schemas/community_game_adapter.v1.schema.json](schemas/community_game_adapter.v1.schema.json) · ejemplos: [community_adapters/examples/](community_adapters/examples/).
 
 ## Compatibilidad (0.1.0 Beta)
 
@@ -71,7 +73,8 @@ Datos: `%LOCALAPPDATA%\FourSevenTech\F7777techMods\` · Override: `SGM_DATA_DIR`
 | [docs/PRECAUCIONES.md](docs/PRECAUCIONES.md) | Antes de mods reales |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Problemas conocidos |
 | [CHANGELOG.md](CHANGELOG.md) | Cambios |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribuciones |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribuciones (incl. adaptadores comunitarios S50) |
+| [GAME_ADAPTER_GUIDE.md](GAME_ADAPTER_GUIDE.md) | Cómo aportar un adaptador de juego (JSON v1) |
 | [SECURITY.md](SECURITY.md) | Seguridad |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Terceros |
 

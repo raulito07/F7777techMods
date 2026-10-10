@@ -28,12 +28,27 @@ Scripts en `legacy/` (Excel FF7R): `pip install -r requirements-legacy.txt` — 
 - Mejoras de documentación
 - Pruebas automatizadas en temporales
 - Adaptadores nuevos **sin** tocar instalaciones ajenas por defecto
+- **Adaptadores comunitarios JSON (S50)** bajo `community_adapters/` — ver [GAME_ADAPTER_GUIDE.md](GAME_ADAPTER_GUIDE.md)
+
+## Adaptadores comunitarios (S50)
+
+1. Formato: JSON validado (`schemas/community_game_adapter.v1.schema.json`), API `1.0`.
+2. Solo declarativo: formatos, destinos relativos, detección, instrucciones, limitaciones.
+3. **No** se ejecuta Python ni plugins de terceros en v1. Código futuro = permiso `request_code_extension_review` + revisión de seguridad.
+4. `auto_install_allowed` debe ser `false`. No habilita Apply.
+5. No puede omitir validación de rutas, protección de archivos ajenos, backup, confirmación ni rollback.
+6. No envíe datos de instalaciones reales ni rutas personales.
+7. Incluya pruebas sintéticas (juegos ficticios). Ejemplos en `community_adapters/examples/`.
+8. Solicite revisión en el PR indicando evidencias y limitaciones.
+
+Capas a no confundir: juego reconocido ≠ mod reconocido ≠ formato reconocido ≠ destino verificado ≠ instalación automática.
 
 ## Cambios que requieren cuidado especial
 
 - Cualquier escritura en destino de mods
 - Liberación / borrado respecto a Vortex staging
 - Empaquetado Windows
+- Extensiones con código (fuera del modelo JSON v1)
 
 ## Cabeceras
 
